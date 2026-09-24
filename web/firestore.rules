@@ -1,0 +1,68 @@
+rules_version = '2';
+
+// 身内利用専用の非公開アプリのため、URL（このアプリ）を知っている人だけが読み書きできる。
+// ワードジャマー（rooms）・17ポーカー（poker_*）と同じFirebaseプロジェクトを共用する想定なので、
+// 3つのアプリのルールをこのファイルにまとめている。共用しない場合も、このまま貼り付けてOK。
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ---- ワードジャマー ----
+    match /rooms/{roomId} {
+      allow get, write: if true;
+      allow list: if request.query.limit <= 50;
+    }
+
+    // ---- 17ポーカー ----
+    match /poker_tables/{tableId} {
+      allow get, write: if true;
+      allow list: if request.query.limit <= 50;
+
+      match /presence/{seatId} {
+        allow get, list, write: if true;
+      }
+    }
+    match /poker_players/{playerId} {
+      allow get, write: if true;
+      allow list: if request.query.limit <= 100;
+    }
+    match /poker_matches/{matchId} {
+      allow get, write: if true;
+      allow list: if request.query.limit <= 100;
+    }
+
+    // ---- ドパ麻雀 ----
+    // ルーム（対局状態を含む）。削除は管理画面（サーバー）からのみ。
+    match /dopa_rooms/{code} {
+      allow get, create, update: if true;
+      allow list: if request.query.limit <= 50;
+
+      match /presence/{playerId} {
+        allow get, list, create, update: if true;
+      }
+    }
+    // 戦績（プレイヤー単位・対局単位）。削除は不可。
+    match /dopa_players/{id} {
+      allow get, create, update: if true;
+      allow list: if request.query.limit <= 1000;
+    }
+    match /dopa_matches/{id} {
+      allow get, create, update: if true;
+      allow list: if request.query.limit <= 100;
+    }
+    // 名前の統合情報（管理画面からのみ書き込み）
+    match /dopa_aliases/{name} {
+      allow get: if true;
+      allow write: if false;
+    }
+    // 時刻合わせ用（サーバー時刻の取得）
+    match /dopa_clock/{playerId} {
+      allow get, create, update: if true;
+    }
+    // 管理ログ。ブラウザからは読み書き・削除すべて不可（管理画面のサーバー処理のみが追記する）
+    match /dopa_admin_logs/{id} {
+      allow read, write: if false;
+    }
+    match /dopa_admin_meta/{id} {
+      allow read, write: if false;
+    }
+  }
+}
