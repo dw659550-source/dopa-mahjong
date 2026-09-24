@@ -1,0 +1,130 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import type { GameLength } from "@dopa/shared";
+import { subscribeRanking } from "@/lib/rooms";
+import { derive, fmtPoints, pct, type PlayerStatsDoc } from "@/lib/statsModel";
+
+type SortKey = "totalPoints" | "avgRank" | "avgPoints";
+
+const SORT_LABEL: Record<SortKey, string> = {
+  totalPoints: "通算得点",
+  avgRank: "平均順位",
+  avgPoints: "平均得点",
+};
+
+export default function RankingPage() {
+  const [mode, setMode] = useState<GameLength>("tonpu");
+  const [sort, setSort] = useState<SortKey>("totalPoints");
+  const [docs, setDocs] = useState<PlayerStatsDoc[] | null>(null);
+  const [open, setOpen] = useState<string | null>(null);
+
+  useEffect(() => {
+    setDocs(null);
+    return subscribeRanking(mode, setDocs);
+  }, [mode]);
+
+  const rows = useMemo(() => {
+    if (!docs) return [];
+    const list = docs.filter((d) => !d.excluded && d.games > 0).map((d) => ({ d, x: derive(d) }));
+    list.sort((a, b) => {
+      if (sort === "totalPoints") return b.d.totalPoints - a.d.totalPoints;
+      if (sort === "avgPoints") return b.x.avgPoints - a.x.avgPoints;
+      return a.x.avgRank - b.x.avgRank || b.d.games - a.d.games;
+    });
+    return list;
+  }, [docs, sort]);
+
+  return (
+    <main className="flex flex-col gap-3">
+      <div className="flex items-center justify-between">
+        <Link href="/" className="text-dp-muted text-sm">
+          ‹ ロビー
+        </Link>
+        <h1 className="text-2xl font-black">ランキング</h1>
+        <span className="w-12" />
+      </div>
+
+      <div className="card p-3 flex flex-col gap-2">
+        <div className="flex gap-1.5">
+          {(["tonpu", "hanchan"] as const).map((m) => (
+            <button key={m} className={mode === m ? "chip-on" : "chip-off"} onClick={() => setMode(m)}>
+              {m === "tonpu" ? "東風戦" : "東南戦"}
+            </button>
+          ))}
+        </div>
+        <div className="flex gap-1.5 flex-wrap items-center">
+          <span className="text-xs text-dp-muted mr-1">並べ替え</span>
+          {(Object.keys(SORT_LABEL) as SortKey[]).map((k) => (
+            <button key={k} className={sort === k ? "chip-on" : "chip-off"} onClick={() => setSort(k)}>
+              {SORT_LABEL[k]}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {!docs && <p className="text-dp-muted text-sm text-center">読み込み中…</p>}
+      {docs && rows.length === 0 && <p className="text-dp-muted text-sm text-center">まだ記録がありません。</p>}
+
+      <ol className="flex flex-col gap-2">
+        {rows.map(({ d, x }, i) => (
+          <li key={d.name} className="card p-3">
+            <button className="w-full text-left" onClick={() => setOpen(open === d.name ? null : d.name)}>
+              <div className="flex items-center gap-3">
+                <span className="w-7 text-center font-black text-dp-accent">{i + 1}</span>
+                <span className="flex-1 font-bold truncate">{d.name}</span>
+                <span className="text-right text-sm">
+                  <span className="block font-black">
+                    {sort === "avgRank" ? x.avgRank.toFixed(2) : sort === "avgPoints" ? fmtPoints(x.avgPoints) : fmtPoints(d.totalPoints)}
+                  </span>
+                  <span className="block text-xs text-dp-muted">{d.games}戦</span>
+                </span>
+              </div>
+            </button>
+            {open === d.name && (
+              <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1 text-sm">
+                <Stat label="対戦数" v={`${d.games}`} />
+                <Stat label="平均順位" v={x.avgRank.toFixed(2)} />
+                <Stat label="通算得点" v={fmtPoints(d.totalPoints)} />
+                <Stat label="平均得点" v={fmtPoints(x.avgPoints)} />
+                {x.rankRates.map((r, j) => (
+                  <Stat key={j} label={`${j + 1}位率`} v={pct(r)} />
+                ))}
+                <Stat label="和了率" v={pct(x.winRate)} />
+                <Stat label="放銃率" v={pct(x.dealinRate)} />
+                <Stat label="副露率" v={pct(x.callRate)} />
+                <Stat label="立直率" v={pct(x.riichiRate)} />
+                <Stat label="飛び率" v={pct(x.tobiRate)} />
+                <div className="col-span-full mt-1">
+                  <span className="text-dp-muted">役満の和了記録：</span>
+                  {d.yakuman.length === 0 ? (
+                    <span>なし</span>
+                  ) : (
+                    <ul className="mt-1 flex flex-col gap-0.5">
+                      {d.yakuman.map((y, j) => (
+                        <li key={j} className="text-dp-accent">
+                          {y.yaku}
+                          <span className="text-dp-muted text-xs ml-2">{new Date(y.at).toLocaleString("ja-JP")}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            )}
+          </li>
+        ))}
+      </ol>
+    </main>
+  );
+}
+
+function Stat({ label, v }: { label: string; v: string }) {
+  return (
+    <div className="flex justify-between border-b border-white/5 py-0.5">
+      <span className="text-dp-muted">{label}</span>
+      <span className="font-bold">{v}</span>
+    </div>
+  );
+}
