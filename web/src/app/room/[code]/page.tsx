@@ -66,7 +66,14 @@ function RoomPage() {
     void syncClock(pid);
   }, []);
 
-  useEffect(() => subscribeRoom(code, setRoom), [code]);
+  useEffect(
+    () =>
+      subscribeRoom(code, setRoom, (e) => {
+        console.error(e);
+        setJoinError(`ルームを読み込めませんでした（${(e as { code?: string }).code ?? e.message}）`);
+      }),
+    [code],
+  );
   useEffect(() => subscribePresence(code, setPresence), [code]);
 
   // 入室（観戦URLの場合は入室しない）
@@ -78,7 +85,11 @@ function RoomPage() {
         else if (r.spectator) router.replace(`/room/${code}?watch=1`);
         else setJoined(true);
       })
-      .catch((e) => setJoinError(e instanceof Error ? e.message : "入室できませんでした"));
+      .catch((e) => {
+        console.error(e);
+        const c = (e as { code?: string }).code;
+        setJoinError(`入室できませんでした${c ? `（${c}）` : e instanceof Error ? `（${e.message}）` : ""}`);
+      });
   }, [code, playerId, name, watch, joined, router]);
 
   const serverState = useMemo(() => parseState(room ?? null), [room]);
@@ -231,8 +242,8 @@ function RoomPage() {
     );
   }
 
-  if (room === undefined) return <p className="text-center text-dp-muted pt-10">読み込み中…</p>;
-  if (room === null || joinError) {
+  if (room === undefined && !joinError) return <p className="text-center text-dp-muted pt-10">読み込み中…</p>;
+  if (!room || joinError) {
     return (
       <main className="flex flex-col gap-3 items-center pt-10">
         <p className="text-dp-bad font-bold">{joinError ?? "ルームが見つかりません"}</p>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { DEFAULT_RULES, type Rules } from "@dopa/shared";
@@ -22,6 +22,7 @@ export default function LobbyPage() {
   const [error, setError] = useState<string | null>(null);
   const [playing, setPlaying] = useState<RoomDoc[] | null>(null);
   const [showDetails, setShowDetails] = useState(false);
+  const nameRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setName(getLastName());
@@ -38,6 +39,8 @@ export default function LobbyPage() {
     if (!n) {
       setError("名前を入力してください（戦績は名前で記録されます）");
       SE.error();
+      nameRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      nameRef.current?.focus();
       return null;
     }
     saveName(n);
@@ -51,7 +54,8 @@ export default function LobbyPage() {
     try {
       await fn();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "エラーが発生しました");
+      console.error(e);
+      setError(describeError(e));
       SE.error();
       setBusy(false);
     }
@@ -92,6 +96,18 @@ export default function LobbyPage() {
 
   return (
     <main className="flex flex-col gap-4">
+      {error && (
+        <div
+          role="alert"
+          className="fixed top-3 left-1/2 -translate-x-1/2 z-50 w-[calc(100%-24px)] max-w-md rounded-xl bg-dp-bad text-white px-4 py-3 text-sm font-bold shadow-lg flex items-start gap-3"
+        >
+          <span className="flex-1 break-words">{error}</span>
+          <button aria-label="閉じる" onClick={() => setError(null)} className="shrink-0">
+            ✕
+          </button>
+        </div>
+      )}
+
       <header className="text-center pt-2">
         <h1 className="text-4xl font-black tracking-wider">
           <span className="text-dp-accent">ドパ</span>麻雀
@@ -111,13 +127,13 @@ export default function LobbyPage() {
         </label>
         <input
           id="name"
+          ref={nameRef}
           className="input"
           value={name}
           maxLength={16}
           placeholder="例：たろう"
           onChange={(e) => setName(e.target.value)}
         />
-        {error && <p className="text-dp-bad text-sm font-bold">{error}</p>}
       </section>
 
       <section className="card p-4 flex flex-col gap-3">
@@ -204,4 +220,17 @@ export default function LobbyPage() {
       </section>
     </main>
   );
+}
+
+/** 画面に出すエラー文。Firestoreのエラーは原因がわかるよう補足する */
+function describeError(e: unknown): string {
+  const code = typeof e === "object" && e && "code" in e ? String((e as { code: unknown }).code) : "";
+  const msg = e instanceof Error ? e.message : "エラーが発生しました";
+  if (code === "permission-denied") {
+    return "データベースへの書き込みが拒否されました。Firestoreのルールが公開されているか確認してください。";
+  }
+  if (code === "unavailable" || code === "deadline-exceeded") {
+    return "データベースに接続できませんでした。通信状況を確認して、もう一度お試しください。";
+  }
+  return code ? `${msg}（${code}）` : msg;
 }

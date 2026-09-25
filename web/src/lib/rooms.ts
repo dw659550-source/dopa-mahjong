@@ -88,8 +88,12 @@ export function parseState(room: RoomDoc | null): GameState | null {
   }
 }
 
-export function subscribeRoom(code: string, cb: (room: RoomDoc | null) => void) {
-  return onSnapshot(roomRef(code), (snap) => cb(snap.exists() ? (snap.data() as RoomDoc) : null));
+export function subscribeRoom(code: string, cb: (room: RoomDoc | null) => void, onError?: (e: Error) => void) {
+  return onSnapshot(
+    roomRef(code),
+    (snap) => cb(snap.exists() ? (snap.data() as RoomDoc) : null),
+    (e) => onError?.(e),
+  );
 }
 
 export function subscribePresence(code: string, cb: (p: Record<string, PresenceDoc>) => void) {
