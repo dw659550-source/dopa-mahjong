@@ -136,23 +136,27 @@ function StickShape({ x, y, color, angle = 0, len }: { x: number; y: number; col
   );
 }
 
-/** 一索は鳥（孔雀）の図柄 */
-function Bird({ red }: { red: boolean }) {
+/** 一索は1本の大きな竹（節と葉を付け、赤で縁取る） */
+function BigBamboo({ red }: { red: boolean }) {
   const body = red ? RED : GREEN;
+  const w = 8;
+  const top = 5;
+  const bottom = 37;
+  const x = 15 - w / 2;
   return (
     <g>
-      {/* 尾羽 */}
-      <path d="M15 24 C 7 30, 5 36, 7 40 C 11 36, 13 32, 15 28 C 17 32, 19 36, 23 40 C 25 36, 23 30, 15 24 Z" fill={body} />
-      <circle cx={10} cy={36} r={1.4} fill={RED} />
-      <circle cx={20} cy={36} r={1.4} fill={RED} />
-      {/* 胴体 */}
-      <ellipse cx={15} cy={19} rx={6.5} ry={7.5} fill={body} />
-      <path d="M11 17 C 13 22, 17 22, 19 17" stroke={BLUE} strokeWidth={1.3} fill="none" />
-      {/* 首と頭 */}
-      <path d="M13 13 C 12 8, 14 4.5, 17 4.5 C 19.5 4.5, 20 7, 18.5 8.5 C 17 10, 16.5 11, 17 13 Z" fill={body} />
-      <circle cx={17.6} cy={6.6} r={0.9} fill="#fffdf6" />
-      <path d="M19.8 6.8 L 23 7.8 L 19.6 8.4 Z" fill={RED} />
-      <path d="M16 4.6 C 15.5 2.5, 17 1.8, 17.5 3.2" stroke={RED} strokeWidth={1} fill="none" />
+      {/* 竹の本体 */}
+      <rect x={x} y={top} width={w} height={bottom - top} rx={w / 2} fill={body} />
+      <rect x={x + 1.4} y={top + 2} width={1.6} height={bottom - top - 4} rx={0.8} fill="#fffdf6" opacity={0.45} />
+      {/* 節 */}
+      {[13, 21, 29].map((y) => (
+        <g key={y}>
+          <rect x={x - 0.8} y={y - 1.1} width={w + 1.6} height={2.2} rx={1.1} fill={red ? GREEN : RED} />
+        </g>
+      ))}
+      {/* 葉 */}
+      <path d="M19 12 C 23 9, 26 9.5, 27 11 C 24.5 12.5, 22 13, 19 13.2 Z" fill={body} />
+      <path d="M11 24 C 7 21, 4 21.5, 3 23 C 5.5 24.5, 8 25, 11 25.2 Z" fill={body} />
     </g>
   );
 }
@@ -161,7 +165,7 @@ export function SouFace({ n, red }: { n: number; red: boolean }) {
   if (n === 1) {
     return (
       <svg viewBox={`0 0 ${W} ${H}`} className="tile-svg" aria-hidden>
-        <Bird red={red} />
+        <BigBamboo red={red} />
       </svg>
     );
   }

@@ -22,6 +22,7 @@ export default function LobbyPage() {
   const [error, setError] = useState<string | null>(null);
   const [playing, setPlaying] = useState<RoomDoc[] | null>(null);
   const [waiting, setWaiting] = useState<RoomDoc[] | null>(null);
+  const [roomsKey, setRoomsKey] = useState(0);
   const [showDetails, setShowDetails] = useState(false);
   const nameRef = useRef<HTMLInputElement>(null);
 
@@ -32,13 +33,15 @@ export default function LobbyPage() {
 
   useEffect(() => {
     if (!configured) return;
+    setPlaying(null);
     return subscribePlayingRooms(setPlaying);
-  }, [configured]);
+  }, [configured, roomsKey]);
 
   useEffect(() => {
     if (!configured) return;
+    setWaiting(null);
     return subscribeWaitingRooms(setWaiting);
-  }, [configured]);
+  }, [configured, roomsKey]);
 
   function requireName(): string | null {
     const n = normalizeName(name);
@@ -183,7 +186,18 @@ export default function LobbyPage() {
       <section className="card p-4 flex flex-col gap-3">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-black">参加者募集中の部屋</h2>
-          <span className="text-xs text-dp-muted">{waiting ? `${waiting.length}件` : "読み込み中…"}</span>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-dp-muted">{waiting ? `${waiting.length}件` : "読み込み中…"}</span>
+            <button
+              className="btn-secondary text-xs !px-3 !py-1.5"
+              onClick={() => {
+                SE.button();
+                setRoomsKey((k) => k + 1);
+              }}
+            >
+              再読み込み
+            </button>
+          </div>
         </div>
         {waiting && waiting.length === 0 && (
           <p className="text-sm text-dp-muted">いま募集中の部屋はありません。「ルームを作成する」から部屋を立てられます。</p>

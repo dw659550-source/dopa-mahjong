@@ -7,11 +7,11 @@ import { fmtPoints } from "@/lib/statsModel";
 export default function FinalView({
   state,
   recorded,
-  onRematch,
+  onBackToRoom,
 }: {
   state: GameState;
   recorded: boolean;
-  onRematch?: () => void;
+  onBackToRoom?: () => void;
 }) {
   const f = state.final!;
   return (
@@ -46,9 +46,9 @@ export default function FinalView({
         {recorded ? "この対局は戦績に記録されました。" : "戦績を記録しています…"}
       </p>
       <div className="flex gap-2 justify-center">
-        {onRematch && (
-          <button className="btn-primary" onClick={onRematch}>
-            もう一度CPU対戦
+        {onBackToRoom && (
+          <button className="btn-primary" onClick={onBackToRoom}>
+            部屋に戻る
           </button>
         )}
         <Link href="/" className="btn-secondary">
