@@ -49,7 +49,9 @@ npm test         # 麻雀ロジックのテスト
 
 1. Vercelで「Add New Project」→ このリポジトリをインポート。
 2. **Root Directory に `web` を指定**。
-3. Environment Variables に手順3の値をすべて設定して Deploy。
+3. Environment Variables に手順3の値を1組ずつ（Key と Value に分けて）設定して Deploy。
+   - `FIREBASE_SERVICE_ACCOUNT_JSON` は複数行のJSONをそのまま貼ってOK。「starts and ends with whitespace and has return characters」という警告が出ますが問題ありません。
+   - 本番（Production）として公開されるのは `main` ブランチです。作業ブランチからのデプロイはプレビュー扱いになります。
 
 管理画面は `/admin` です（ロビーからはリンクしていません）。
 
