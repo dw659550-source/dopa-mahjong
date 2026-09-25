@@ -68,6 +68,16 @@ export interface RoomDoc {
   summary: RoomSummary | null;
   recorded: boolean;
   abortedReason: string | null;
+  /** 前回の対局結果（部屋に戻ったときに待機室で表示する） */
+  lastFinal?: LastFinalPlayer[] | null;
+}
+
+export interface LastFinalPlayer {
+  name: string;
+  isCpu: boolean;
+  rank: number;
+  score: number;
+  points: number;
 }
 
 export interface PresenceDoc {
@@ -306,6 +316,42 @@ export async function fillCpu(code: string, playerId: string, level: CpuLevel) {
 
 export async function updateRules(code: string, playerId: string, rules: Rules) {
   return hostTx(code, playerId, () => ({ rules }));
+}
+
+/** 終局後、同じメンバーのまま待機室に戻す（参加者なら誰でも実行できる） */
+export async function returnToRoom(code: string, playerId: string): Promise<string | null> {
+  return runTransaction(db, async (tx) => {
+    const snap = await tx.get(roomRef(code));
+    if (!snap.exists()) return "ルームが見つかりません";
+    const room = snap.data() as RoomDoc;
+    if (room.status === "waiting") return null; // すでに誰かが戻している
+    if (room.status !== "ended") return "対局が終わっていません";
+    const gs = room.gameSeats ?? [];
+    if (!gs.some((x) => x.playerId === playerId)) return "この対局の参加者ではありません";
+    const state = parseState(room);
+    // 再入場で端末が変わった人がいれば、新しい端末のIDを席に反映する
+    const seats = room.seats.map((seat) => {
+      if (!seat || seat.isCpu) return seat;
+      const g = gs.find((x) => !x.isCpu && x.name === seat.name);
+      return g ? { ...seat, playerId: g.playerId } : seat;
+    });
+    const humans = seats.filter((x) => x && !x.isCpu) as SeatDoc[];
+    const hostId = humans.some((x) => x.playerId === room.hostId) ? room.hostId : humans[0]?.playerId ?? room.hostId;
+    tx.update(roomRef(code), {
+      status: "waiting",
+      seats,
+      hostId,
+      gameSeats: null,
+      stateJson: null,
+      summary: null,
+      recorded: false,
+      lastFinal:
+        state?.final?.players.map((p) => ({ name: p.name, isCpu: p.isCpu, rank: p.rank, score: p.score, points: p.points })) ??
+        null,
+      updatedAt: serverNow(),
+    });
+    return null;
+  });
 }
 
 export async function startGame(code: string, playerId: string) {

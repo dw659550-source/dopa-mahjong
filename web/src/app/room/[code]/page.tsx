@@ -13,7 +13,7 @@ import { getLastName, getOrCreatePlayerId, normalizeName, saveName } from "@/lib
 import {
   HEARTBEAT_MS,
   STALE_MS,
-  createRoom,
+  returnToRoom,
   heartbeat,
   joinRoom,
   parseState,
@@ -158,7 +158,11 @@ function RoomPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [room?.gameSeats, presence, clock]);
 
+  // 同じ端末から送る書き込み同士がぶつかると、Firestoreがやり直し（待ち時間つき）をするため、
+  // 自分の操作を送っている間は進行役の送信を止め、進行役の送信中に操作したときはその完了を待ってから送る。
   const inflight = useRef(false);
+  const driverSending = useRef<Promise<unknown> | null>(null);
+  const userBusy = useRef(0);
   const pendingKey = useRef(0);
   const send = useCallback(
     async (a: Action, opts: { optimistic?: boolean } = {}) => {
@@ -174,7 +178,9 @@ function RoomPage() {
         pendingKey.current = key;
       }
       let failed = false;
+      userBusy.current++;
       try {
+        if (driverSending.current) await driverSending.current.catch(() => undefined);
         const res = await sendGameAction(code, a);
         if (res.error && a.type !== "tick" && a.type !== "connected") {
           failed = true;
@@ -188,6 +194,8 @@ function RoomPage() {
           setToast(e instanceof Error ? e.message : "通信エラー");
           setTimeout(() => setToast(null), 1800);
         }
+      } finally {
+        userBusy.current--;
       }
       // 成功時はサーバーの状態が届いた時点で自動的に重ね表示が外れる（念のため一定時間後にも外す）
       if (pendingKey.current === key) {
@@ -210,7 +218,7 @@ function RoomPage() {
     if (mySeat === null) return;
     const iv = setInterval(async () => {
       const { state: st, connected: conn, room: rm } = latest.current;
-      if (!st || !rm || rm.status !== "playing" || inflight.current) return;
+      if (!st || !rm || rm.status !== "playing" || inflight.current || userBusy.current > 0) return;
       const now = serverNow();
       const humans = [0, 1, 2, 3].filter((i) => !st.seats[i].isCpu);
       const onlineHumans = humans.filter((i) => conn[i] || i === mySeat);
@@ -230,12 +238,15 @@ function RoomPage() {
       }
       if (!action) return;
       inflight.current = true;
+      const p = sendGameAction(code, action);
+      driverSending.current = p;
       try {
-        await sendGameAction(code, action);
+        await p;
       } catch {
         // 次の周期で再試行
       } finally {
         inflight.current = false;
+        if (driverSending.current === p) driverSending.current = null;
       }
     }, 200);
     return () => clearInterval(iv);
@@ -243,11 +254,19 @@ function RoomPage() {
 
   const onAction = useCallback((a: Action) => void send(a, { optimistic: a.type === "discard" }), [send]);
 
-  const rematch = useCallback(async () => {
-    if (!room || !state) return;
-    const c = await createRoom(playerId, name, room.rules, true);
-    router.push(`/room/${c}`);
-  }, [room, state, playerId, name, router]);
+  const backToRoom = useCallback(async () => {
+    try {
+      const err = await returnToRoom(code, playerId);
+      if (err) {
+        setToast(err);
+        SE.error();
+        setTimeout(() => setToast(null), 1800);
+      } else SE.button();
+    } catch (e) {
+      setToast(e instanceof Error ? e.message : "通信エラー");
+      setTimeout(() => setToast(null), 1800);
+    }
+  }, [code, playerId]);
 
   // ---------------------------------------------------------------- 表示
 
@@ -336,7 +355,7 @@ function RoomPage() {
     <main>
       {header}
       {state.phase === "ended" ? (
-        <FinalView state={state} recorded={room.recorded} onRematch={room.isCpuGame && mySeat !== null ? rematch : undefined} />
+        <FinalView state={state} recorded={room.recorded} onBackToRoom={mySeat !== null ? backToRoom : undefined} />
       ) : (
         <GameView state={state} mySeat={mySeat} onAction={onAction} connected={connected} />
       )}

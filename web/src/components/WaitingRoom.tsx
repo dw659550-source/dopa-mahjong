@@ -6,6 +6,7 @@ import RulesForm, { CPU_LEVEL_LABEL, rulesText } from "./RulesForm";
 import { fillCpu, leaveWaitingRoom, setSeatCpu, startGame, updateRules, type PresenceDoc, type RoomDoc } from "@/lib/rooms";
 import { serverNow } from "@/lib/clock";
 import { SE } from "@/lib/sounds";
+import { fmtPoints } from "@/lib/statsModel";
 import { STALE_MS } from "@/lib/rooms";
 
 export default function WaitingRoom({
@@ -51,6 +52,29 @@ export default function WaitingRoom({
         <p className="text-5xl font-black tracking-[0.3em] text-dp-accent">{room.code}</p>
         <p className="text-xs text-dp-muted mt-1">このコードを友だちに伝えて、ロビーの「参加する」から入ってもらってください</p>
       </div>
+
+      {room.lastFinal && room.lastFinal.length > 0 && (
+        <div className="card p-4 flex flex-col gap-2">
+          <h2 className="font-black">前回の結果</h2>
+          <table className="w-full text-sm">
+            <tbody>
+              {room.lastFinal.map((p) => (
+                <tr key={p.name} className="border-b border-white/5">
+                  <td className="py-1 w-8 font-black">{p.rank}位</td>
+                  <td className="py-1 font-bold truncate">
+                    {p.name}
+                    {p.isCpu && <span className="text-xs text-dp-muted ml-1">CPU</span>}
+                  </td>
+                  <td className="py-1 text-right font-mono">{p.score.toLocaleString()}</td>
+                  <td className={`py-1 text-right font-mono font-bold ${p.points >= 0 ? "text-dp-accent2" : "text-dp-bad"}`}>
+                    {fmtPoints(p.points)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       <div className="card p-4 flex flex-col gap-2">
         <h2 className="font-black">席</h2>
