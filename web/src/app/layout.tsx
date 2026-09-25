@@ -3,6 +3,7 @@ import "./globals.css";
 import HelpButton from "@/components/HowToPlay";
 import SoundToggle from "@/components/SoundToggle";
 import CanonicalHostRedirect from "@/components/CanonicalHostRedirect";
+import TileImagePreloader from "@/components/TileImagePreloader";
 
 export const metadata: Metadata = {
   title: "ドパ麻雀",
@@ -21,6 +22,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="ja">
       <body className="min-h-screen bg-dp-bg text-dp-text">
         <CanonicalHostRedirect />
+        <TileImagePreloader />
         <div className="mx-auto max-w-3xl min-h-screen px-2 sm:px-4 py-3 pb-20">{children}</div>
         <HelpButton />
         <SoundToggle />
