@@ -1,6 +1,7 @@
 "use client";
 
 import { isRed, kindName, kindOf, type Tile as TileId } from "@dopa/shared";
+import { PinFace, SouFace } from "./TileFace";
 
 const NUM_KANJI = ["一", "二", "三", "四", "五", "六", "七", "八", "九"];
 const HONOR = ["東", "南", "西", "北", "白", "發", "中"];
@@ -38,6 +39,10 @@ export default function Tile({ tile, aka = true, size = "md", sideways, highligh
     const h = HONOR[kind - 27];
     const color = kind === 32 ? "t-green" : kind === 33 ? "t-red" : kind === 31 ? "t-haku" : "t-navy";
     content = <span className={`tile-honor ${color}`}>{kind === 31 ? "" : h}</span>;
+  } else if (kind >= 9) {
+    // 筒子・索子は実物と同じ図柄
+    const n = (kind % 9) + 1;
+    content = kind < 18 ? <PinFace n={n} red={red} /> : <SouFace n={n} red={red} />;
   } else {
     const suit = Math.floor(kind / 9);
     const n = kind % 9;

@@ -120,6 +120,11 @@ body {
 .tile-lg .tile-honor {
   font-size: 30px;
 }
+.tile-svg {
+  width: 86%;
+  height: 90%;
+  display: block;
+}
 .t-red {
   color: #d3262e;
 }
