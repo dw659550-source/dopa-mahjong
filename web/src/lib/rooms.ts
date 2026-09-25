@@ -381,9 +381,27 @@ export interface ActionResult {
  * 対局の操作を送る。Firestoreのトランザクションで「先にコミットした方が勝ち」になるため、
  * 早押しの判定はサーバー（Firestore）に届いた順になる。
  */
+/**
+ * 書き込みがぶつかったときのやり直しを自前で行う。
+ * Firestoreに任せると、やり直しのたびに約1秒→1.5秒→2.3秒…と待つため、3回ぶつかると約5秒かかる。
+ * ここでは待たずに（ごく短いランダムな間だけ空けて）すぐ再挑戦する。
+ */
+async function runTxFast<T>(fn: (tx: Transaction) => Promise<T>): Promise<T> {
+  const MAX_TRIES = 25;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await runTransaction(db, fn, { maxAttempts: 1 });
+    } catch (e) {
+      const code = (e as { code?: string }).code;
+      const retryable = code === "aborted" || code === "failed-precondition" || code === "unavailable";
+      if (!retryable || attempt >= MAX_TRIES) throw e;
+      await new Promise((r) => setTimeout(r, Math.random() * Math.min(120, 15 * attempt)));
+    }
+  }
+}
+
 export async function sendGameAction(code: string, action: Action): Promise<ActionResult> {
-  return runTransaction(
-    db,
+  return runTxFast(
     async (tx) => {
       const snap = await tx.get(roomRef(code));
       if (!snap.exists()) return { error: "ルームが見つかりません" };
@@ -409,7 +427,6 @@ export async function sendGameAction(code: string, action: Action): Promise<Acti
       tx.update(roomRef(code), update);
       return { error, state };
     },
-    { maxAttempts: 12 },
   );
 }
 

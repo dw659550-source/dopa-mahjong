@@ -22,7 +22,23 @@ interface Props {
  */
 export function tileImageSrc(kind: Kind, red: boolean, sideways: boolean): string {
   const name = kind >= 27 ? `j${kind - 26}` : `${"mps"[Math.floor(kind / 9)]}${red ? "e" : (kind % 9) + 1}`;
-  return `/tiles/${sideways ? "2" : ""}${name}.png`;
+  return `/tiles/${sideways ? "2" : ""}${name}.png?v=${TILE_IMAGE_VERSION}`;
+}
+
+/**
+ * 牌画像の版。画像を差し替えたときは数字を上げる（ブラウザに長期間保存させているため、
+ * 版を変えないと古い画像が表示され続ける）。
+ */
+export const TILE_IMAGE_VERSION = 1;
+
+/** すべての牌画像のパス（先読み用） */
+export function allTileImageSrcs(): string[] {
+  const out: string[] = [];
+  for (const sideways of [false, true]) {
+    for (let kind = 0; kind < 34; kind++) out.push(tileImageSrc(kind, false, sideways));
+    for (const kind of [4, 13, 22]) out.push(tileImageSrc(kind, true, sideways));
+  }
+  return out;
 }
 
 export default function Tile({ tile, aka = true, size = "md", sideways, highlight, onClick, disabled, className }: Props) {
