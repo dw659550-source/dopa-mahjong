@@ -1,14 +1,12 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { CANONICAL_HOST, shouldRedirectHost } from "@/lib/canonicalHost";
 
-// 本番では、Vercelが自動で作るURL（アカウント名入りの *.vercel.app）で開かれても、
+// Vercelが自動で作るURL（アカウント名入りの *.vercel.app）で開かれたら、
 // 決まったURL（CANONICAL_HOST）に切り替える。URLにアカウント名が出ないようにするため。
-// プレビュー環境・ローカル開発では何もしない。
-const CANONICAL_HOST = process.env.CANONICAL_HOST || "dopa-mahjong.vercel.app";
-
+// 本番・プレビューを問わず切り替える（ローカル開発・独自ドメインでは何もしない）。
 export function middleware(req: NextRequest) {
-  if (process.env.VERCEL_ENV !== "production") return NextResponse.next();
-  const host = (req.headers.get("host") ?? "").toLowerCase();
-  if (!host || host === CANONICAL_HOST || !host.endsWith(".vercel.app")) return NextResponse.next();
+  const host = req.headers.get("host") ?? "";
+  if (!shouldRedirectHost(host)) return NextResponse.next();
   const url = req.nextUrl.clone();
   url.protocol = "https";
   url.host = CANONICAL_HOST;
