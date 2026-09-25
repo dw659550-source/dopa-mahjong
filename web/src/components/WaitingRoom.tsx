@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { CpuLevel, Rules } from "@dopa/shared";
 import RulesForm, { CPU_LEVEL_LABEL, rulesText } from "./RulesForm";
+import RankingList from "./RankingList";
 import { fillCpu, leaveWaitingRoom, setSeatCpu, startGame, updateRules, type PresenceDoc, type RoomDoc } from "@/lib/rooms";
 import { serverNow } from "@/lib/clock";
 import { SE } from "@/lib/sounds";
@@ -24,6 +25,7 @@ export default function WaitingRoom({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [cpuLevel, setCpuLevel] = useState<CpuLevel>(room.rules.cpuLevel);
+  const [showRanking, setShowRanking] = useState(false);
 
   async function run(fn: () => Promise<string | null | void>) {
     setBusy(true);
@@ -142,6 +144,16 @@ export default function WaitingRoom({
           />
         ) : (
           <p className="text-sm">{rulesText(room.rules)}（ホストが設定します）</p>
+        )}
+      </div>
+
+      <div className="card p-4 flex flex-col gap-2">
+        <button className="flex items-center justify-between w-full" onClick={() => setShowRanking((v) => !v)} aria-expanded={showRanking}>
+          <h2 className="font-black">ランキング</h2>
+          <span className="text-sm font-bold text-dp-accent">{showRanking ? "－閉じる" : "＋見る"}</span>
+        </button>
+        {showRanking && (
+          <RankingList highlightNames={room.seats.filter((x) => x && !x.isCpu).map((x) => x!.name)} />
         )}
       </div>
 
