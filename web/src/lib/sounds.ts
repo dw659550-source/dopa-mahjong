@@ -21,6 +21,7 @@ export function setSoundMuted(muted: boolean): void {
   } catch {
     // 保存できなくても続行
   }
+  if (muted && speechAvailable()) window.speechSynthesis.cancel();
   listeners.forEach((l) => l(muted));
 }
 
@@ -45,6 +46,50 @@ function getCtx(): AudioContext | null {
 /** スマホは操作をきっかけにしないと音が鳴らないため、最初のタップで準備する */
 export function unlockAudio(): void {
   getCtx();
+  unlockSpeech();
+}
+
+// ---------------------------------------------------------------- 音声（読み上げ）
+
+let speechUnlocked = false;
+
+function speechAvailable(): boolean {
+  return typeof window !== "undefined" && "speechSynthesis" in window && typeof SpeechSynthesisUtterance !== "undefined";
+}
+
+/** スマホは操作をきっかけにしないと読み上げが鳴らないため、最初のタップで無音の読み上げをしておく */
+function unlockSpeech() {
+  if (speechUnlocked || !speechAvailable()) return;
+  speechUnlocked = true;
+  try {
+    const u = new SpeechSynthesisUtterance(" ");
+    u.volume = 0;
+    window.speechSynthesis.speak(u);
+  } catch {
+    // 読み上げに対応していない環境では何もしない
+  }
+}
+
+function japaneseVoice(): SpeechSynthesisVoice | null {
+  const voices = window.speechSynthesis.getVoices();
+  return voices.find((v) => v.lang === "ja-JP") ?? voices.find((v) => v.lang.toLowerCase().startsWith("ja")) ?? null;
+}
+
+/** 日本語で読み上げる（効果音オフのときは鳴らさない） */
+export function speak(text: string): void {
+  if (isSoundMuted() || !speechAvailable()) return;
+  try {
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = "ja-JP";
+    const v = japaneseVoice();
+    if (v) u.voice = v;
+    u.rate = 1.15;
+    u.pitch = 1.1;
+    u.volume = 1;
+    window.speechSynthesis.speak(u);
+  } catch {
+    // 読み上げに対応していない環境では何もしない
+  }
 }
 
 function tone(freq: number, start: number, dur: number, type: OscillatorType = "sine", peak = 0.2, endFreq?: number) {
@@ -115,9 +160,9 @@ export const SE = {
     tone(660, 0.2, 0.2, "sawtooth", 0.1);
   },
   riichi() {
-    tone(880, 0, 0.12, "sine", 0.2);
-    tone(1175, 0.1, 0.12, "sine", 0.2);
-    tone(1760, 0.2, 0.35, "sine", 0.18);
+    tone(880, 0, 0.12, "sine", 0.14);
+    tone(1175, 0.1, 0.12, "sine", 0.14);
+    speak("リーチ");
   },
   ron() {
     tone(392, 0, 0.12, "triangle", 0.3);
