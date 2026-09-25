@@ -321,6 +321,14 @@ function PlayersTab({ api, flash }: { api: Api; flash: (m: string) => void }) {
   const [form, setForm] = useState<Record<string, string>>({});
   const [mergeFrom, setMergeFrom] = useState("");
   const [mergeTo, setMergeTo] = useState("");
+  // 統合は東風・東南の両方に対して行うので、どちらかに戦績がある名前をすべて候補にする
+  const names = useLoader(async () => {
+    const [a, b] = await Promise.all(
+      (["tonpu", "hanchan"] as const).map((m) => api<PlayerStatsDoc[]>("listPlayers", { mode: m })),
+    );
+    return Array.from(new Set([...a, ...b].map((p) => p.name))).sort((x, y) => x.localeCompare(y, "ja"));
+  }, [api]);
+  const nameOptions = names.data ?? [];
 
   const startEdit = (p: PlayerStatsDoc) => {
     setEditing(p);
@@ -335,7 +343,13 @@ function PlayersTab({ api, flash }: { api: Api; flash: (m: string) => void }) {
             {m === "tonpu" ? "東風戦" : "東南戦"}
           </button>
         ))}
-        <button className="btn-secondary text-sm ml-auto" onClick={() => void reload()}>
+        <button
+          className="btn-secondary text-sm ml-auto"
+          onClick={() => {
+            void reload();
+            void names.reload();
+          }}
+        >
           再読み込み
         </button>
       </div>
@@ -346,12 +360,26 @@ function PlayersTab({ api, flash }: { api: Api; flash: (m: string) => void }) {
           統合元の戦績を統合先に足し合わせ、統合元の記録を消します（東風・東南の両方）。以後、統合元の名前で遊んだ対局は統合先として記録されます。
         </p>
         <div className="flex gap-2 items-center flex-wrap">
-          <input className="input !w-40" placeholder="統合元の名前" value={mergeFrom} onChange={(e) => setMergeFrom(e.target.value)} />
+          <select className="input !w-44" value={mergeFrom} onChange={(e) => setMergeFrom(e.target.value)}>
+            <option value="">統合元を選ぶ</option>
+            {nameOptions.map((n) => (
+              <option key={n} value={n} disabled={n === mergeTo}>
+                {n}
+              </option>
+            ))}
+          </select>
           <span>→</span>
-          <input className="input !w-40" placeholder="統合先の名前" value={mergeTo} onChange={(e) => setMergeTo(e.target.value)} />
+          <select className="input !w-44" value={mergeTo} onChange={(e) => setMergeTo(e.target.value)}>
+            <option value="">統合先を選ぶ</option>
+            {nameOptions.map((n) => (
+              <option key={n} value={n} disabled={n === mergeFrom}>
+                {n}
+              </option>
+            ))}
+          </select>
           <button
             className="btn-danger text-xs"
-            disabled={!mergeFrom.trim() || !mergeTo.trim()}
+            disabled={!mergeFrom.trim() || !mergeTo.trim() || mergeFrom === mergeTo}
             onClick={() =>
               confirmRun(
                 `「${mergeFrom.trim()}」の戦績を「${mergeTo.trim()}」に統合します。元に戻す機能はありません。よろしいですか？`,
@@ -361,6 +389,7 @@ function PlayersTab({ api, flash }: { api: Api; flash: (m: string) => void }) {
                   setMergeFrom("");
                   setMergeTo("");
                   void reload();
+                  void names.reload();
                 },
               )
             }
