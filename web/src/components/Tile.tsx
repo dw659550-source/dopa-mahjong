@@ -3,7 +3,7 @@
 import { isRed, kindName, kindOf, type Tile as TileId } from "@dopa/shared";
 import { PinFace, SouFace } from "./TileFace";
 
-const NUM_KANJI = ["一", "二", "三", "四", "五", "六", "七", "八", "九"];
+const NUM_KANJI = ["一", "二", "三", "四", "伍", "六", "七", "八", "九"];
 const HONOR = ["東", "南", "西", "北", "白", "發", "中"];
 
 export type TileSize = "xs" | "sm" | "md" | "lg";

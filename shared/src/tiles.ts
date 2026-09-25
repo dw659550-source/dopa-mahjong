@@ -84,7 +84,7 @@ export function kindsToCounts(kinds: readonly Kind[]): number[] {
 }
 
 const HONOR_NAMES = ["東", "南", "西", "北", "白", "發", "中"];
-const NUM_KANJI = ["一", "二", "三", "四", "五", "六", "七", "八", "九"];
+const NUM_KANJI = ["一", "二", "三", "四", "伍", "六", "七", "八", "九"];
 const SUIT_NAMES = ["萬", "筒", "索"];
 
 /** 表示用の名前（例: 五萬, 東） */

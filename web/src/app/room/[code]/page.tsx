@@ -184,9 +184,12 @@ function RoomPage() {
         const res = await sendGameAction(code, a);
         if (res.error && a.type !== "tick" && a.type !== "connected") {
           failed = true;
-          setToast(res.error);
-          SE.error();
-          setTimeout(() => setToast(null), 1800);
+          // 局が終わった直後に届いた操作は、知らせる必要がないので黙って捨てる
+          if (res.error !== "対局中ではありません") {
+            setToast(res.error);
+            SE.error();
+            setTimeout(() => setToast(null), 3000);
+          }
         }
       } catch (e) {
         failed = true;

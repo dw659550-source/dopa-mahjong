@@ -2,9 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import type { GameLength } from "@dopa/shared";
-import { subscribeRanking } from "@/lib/rooms";
-import { derive, fmtPoints, pct, type PlayerStatsDoc } from "@/lib/statsModel";
+import { subscribeAllPlayerStats } from "@/lib/rooms";
+import { combineByName, derive, fmtPoints, pct, type PlayerStatsDoc } from "@/lib/statsModel";
 
 type SortKey = "totalPoints" | "avgRank" | "avgPoints";
 
@@ -15,19 +14,17 @@ const SORT_LABEL: Record<SortKey, string> = {
 };
 
 export default function RankingPage() {
-  const [mode, setMode] = useState<GameLength>("tonpu");
   const [sort, setSort] = useState<SortKey>("totalPoints");
   const [docs, setDocs] = useState<PlayerStatsDoc[] | null>(null);
   const [open, setOpen] = useState<string | null>(null);
 
-  useEffect(() => {
-    setDocs(null);
-    return subscribeRanking(mode, setDocs);
-  }, [mode]);
+  useEffect(() => subscribeAllPlayerStats(setDocs), []);
 
   const rows = useMemo(() => {
     if (!docs) return [];
-    const list = docs.filter((d) => !d.excluded && d.games > 0).map((d) => ({ d, x: derive(d) }));
+    const list = combineByName(docs)
+      .filter((d) => !d.excluded && d.games > 0)
+      .map((d) => ({ d, x: derive(d) }));
     list.sort((a, b) => {
       if (sort === "totalPoints") return b.d.totalPoints - a.d.totalPoints;
       if (sort === "avgPoints") return b.x.avgPoints - a.x.avgPoints;
@@ -47,13 +44,7 @@ export default function RankingPage() {
       </div>
 
       <div className="card p-3 flex flex-col gap-2">
-        <div className="flex gap-1.5">
-          {(["tonpu", "hanchan"] as const).map((m) => (
-            <button key={m} className={mode === m ? "chip-on" : "chip-off"} onClick={() => setMode(m)}>
-              {m === "tonpu" ? "東風戦" : "東南戦"}
-            </button>
-          ))}
-        </div>
+        <p className="text-xs text-dp-muted">東風戦・東南戦の合計です</p>
         <div className="flex gap-1.5 flex-wrap items-center">
           <span className="text-xs text-dp-muted mr-1">並べ替え</span>
           {(Object.keys(SORT_LABEL) as SortKey[]).map((k) => (

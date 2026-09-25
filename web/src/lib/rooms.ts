@@ -480,6 +480,12 @@ function writeRecord(tx: Transaction, plan: RecordPlan) {
   for (const p of plan.players) tx.set(doc(db, "dopa_players", p.id), p.doc);
 }
 
+/** 東風戦・東南戦の両方の戦績（ランキングは名前ごとに合計して表示する） */
+export function subscribeAllPlayerStats(cb: (docs: PlayerStatsDoc[]) => void) {
+  const q = query(collection(db, "dopa_players"), fsLimit(1000));
+  return onSnapshot(q, (snap) => cb(snap.docs.map((d) => d.data() as PlayerStatsDoc)));
+}
+
 export function subscribeRanking(mode: string, cb: (docs: PlayerStatsDoc[]) => void) {
   const q = query(collection(db, "dopa_players"), where("mode", "==", mode), fsLimit(1000));
   return onSnapshot(q, (snap) => cb(snap.docs.map((d) => d.data() as PlayerStatsDoc)));

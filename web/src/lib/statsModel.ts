@@ -195,3 +195,22 @@ export function fmtPoints(x: number): string {
   const v = Math.round(x * 10) / 10;
   return `${v > 0 ? "+" : ""}${v.toFixed(1)}`;
 }
+
+/**
+ * 東風戦・東南戦の戦績を名前ごとに合計する。
+ * どちらかでランキング除外されている名前は、合計のランキングからも除外する。
+ */
+export function combineByName(docs: PlayerStatsDoc[]): PlayerStatsDoc[] {
+  const byName = new Map<string, PlayerStatsDoc>();
+  for (const d of docs) {
+    const cur = byName.get(d.name);
+    if (!cur) {
+      byName.set(d.name, { ...d, yakuman: d.yakuman.slice() });
+      continue;
+    }
+    const merged = mergeStats(cur, d);
+    merged.excluded = cur.excluded || d.excluded;
+    byName.set(d.name, merged);
+  }
+  return [...byName.values()];
+}
