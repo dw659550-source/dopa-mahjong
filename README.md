@@ -53,6 +53,8 @@ npm test         # 麻雀ロジックのテスト
    - `FIREBASE_SERVICE_ACCOUNT_JSON` は複数行のJSONをそのまま貼ってOK。「starts and ends with whitespace and has return characters」という警告が出ますが問題ありません。
    - 本番（Production）として公開されるのは `main` ブランチです。作業ブランチからのデプロイはプレビュー扱いになります。
 
+本番では、Vercelが自動で作るアカウント名入りのURL（`*.vercel.app`）で開かれると、`https://dopa-mahjong.vercel.app` に自動で切り替わります（`web/src/middleware.ts`）。別のURLに変える場合は、環境変数 `CANONICAL_HOST` にそのホスト名（例：`dopa-mj.vercel.app`）を設定してください。
+
 管理画面は `/admin` です（ロビーからはリンクしていません）。
 
 ## 仕組みと、知っておいてほしい制約
