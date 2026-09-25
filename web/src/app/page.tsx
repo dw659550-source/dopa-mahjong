@@ -8,7 +8,7 @@ import { HowToPlayBasics, HowToPlayDetails } from "@/components/HowToPlay";
 import RulesForm, { rulesText } from "@/components/RulesForm";
 import { isFirebaseConfigured } from "@/lib/firebase";
 import { getLastName, getOrCreatePlayerId, normalizeName, saveName } from "@/lib/identity";
-import { createRoom, joinRoom, subscribePlayingRooms, type RoomDoc } from "@/lib/rooms";
+import { createRoom, joinRoom, subscribePlayingRooms, subscribeWaitingRooms, type RoomDoc } from "@/lib/rooms";
 import { syncClock } from "@/lib/clock";
 import { SE, unlockAudio } from "@/lib/sounds";
 
@@ -21,6 +21,7 @@ export default function LobbyPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [playing, setPlaying] = useState<RoomDoc[] | null>(null);
+  const [waiting, setWaiting] = useState<RoomDoc[] | null>(null);
   const [showDetails, setShowDetails] = useState(false);
   const nameRef = useRef<HTMLInputElement>(null);
 
@@ -32,6 +33,11 @@ export default function LobbyPage() {
   useEffect(() => {
     if (!configured) return;
     return subscribePlayingRooms(setPlaying);
+  }, [configured]);
+
+  useEffect(() => {
+    if (!configured) return;
+    return subscribeWaitingRooms(setWaiting);
   }, [configured]);
 
   function requireName(): string | null {
@@ -82,11 +88,11 @@ export default function LobbyPage() {
       router.push(`/room/${c}`);
     });
 
-  const join = () =>
+  const join = (target?: string) =>
     run(async () => {
       const n = requireName();
       if (!n) return setBusy(false);
-      const c = code.trim();
+      const c = (target ?? code).trim();
       if (!/^\d{5}$/.test(c)) throw new Error("ルームコード（5桁の数字）を入力してください");
       const r = await joinRoom(c, getOrCreatePlayerId(), n);
       if (!r.ok) throw new Error(r.error ?? "入室できませんでした");
@@ -168,10 +174,53 @@ export default function LobbyPage() {
             maxLength={5}
             onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
           />
-          <button className="btn-secondary whitespace-nowrap" disabled={busy || !configured} onClick={join}>
+          <button className="btn-secondary whitespace-nowrap" disabled={busy || !configured} onClick={() => join()}>
             参加する
           </button>
         </div>
+      </section>
+
+      <section className="card p-4 flex flex-col gap-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-black">参加者募集中の部屋</h2>
+          <span className="text-xs text-dp-muted">{waiting ? `${waiting.length}件` : "読み込み中…"}</span>
+        </div>
+        {waiting && waiting.length === 0 && (
+          <p className="text-sm text-dp-muted">いま募集中の部屋はありません。「ルームを作成する」から部屋を立てられます。</p>
+        )}
+        <ul className="flex flex-col gap-2">
+          {waiting?.map((r) => {
+            const filled = r.seats.filter((x) => x !== null).length;
+            const host = r.seats.find((x) => x && x.playerId === r.hostId);
+            const full = filled >= 4;
+            return (
+              <li key={r.code} className="rounded-xl bg-dp-panel2 px-3 py-2 flex items-center gap-3">
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-bold truncate">
+                    ルーム {r.code}
+                    {host && <span className="ml-2 text-xs text-dp-muted">ホスト：{host.name}</span>}
+                  </div>
+                  <div className="text-xs text-dp-muted truncate">
+                    {filled}/4人・{rulesText(r.rules)}
+                  </div>
+                  <div className="text-xs text-dp-muted truncate">
+                    {r.seats
+                      .filter((x) => x !== null)
+                      .map((x) => (x!.isCpu ? `${x!.name}` : x!.name))
+                      .join("、")}
+                  </div>
+                </div>
+                <button
+                  className={full ? "btn-secondary text-sm whitespace-nowrap" : "btn-primary text-sm whitespace-nowrap"}
+                  disabled={busy || !configured}
+                  onClick={() => join(r.code)}
+                >
+                  {full ? "満席（観戦）" : "参加する"}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
       </section>
 
       <section className="card p-4 flex flex-col gap-3">

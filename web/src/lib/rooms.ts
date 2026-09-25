@@ -120,6 +120,19 @@ export function subscribePlayingRooms(cb: (rooms: RoomDoc[]) => void) {
   });
 }
 
+/** 参加者を募集中（開始前）の対人戦ルーム。しばらく動きのないルームは出さない */
+export function subscribeWaitingRooms(cb: (rooms: RoomDoc[]) => void) {
+  const q = query(collection(db, ROOMS), where("status", "==", "waiting"), fsLimit(50));
+  return onSnapshot(q, (snap) => {
+    const now = serverNow();
+    const rooms = snap.docs
+      .map((d) => d.data() as RoomDoc)
+      .filter((r) => !r.isCpuGame && now - r.updatedAt < 2 * 60 * 60 * 1000)
+      .sort((a, b) => b.updatedAt - a.updatedAt);
+    cb(rooms);
+  });
+}
+
 function summarize(state: GameState): RoomSummary {
   return {
     label: state.phase === "ended" ? "終了" : roundLabel(state),
