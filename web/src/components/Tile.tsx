@@ -57,13 +57,21 @@ export default function Tile({ tile, aka = true, size = "md", sideways, highligh
   const label = `${kindName(kind)}${red ? "（赤）" : ""}`;
   if (onClick) {
     return (
-      <button type="button" className={classes.join(" ")} onClick={onClick} disabled={disabled} title={label} aria-label={label}>
+      <button
+        type="button"
+        className={classes.join(" ")}
+        onClick={onClick}
+        disabled={disabled}
+        title={label}
+        aria-label={label}
+        data-tile={tile}
+      >
         {content}
       </button>
     );
   }
   return (
-    <div className={classes.join(" ")} title={label} aria-label={label}>
+    <div className={classes.join(" ")} title={label} aria-label={label} data-tile={tile}>
       {content}
     </div>
   );

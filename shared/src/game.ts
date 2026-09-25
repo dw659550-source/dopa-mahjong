@@ -59,7 +59,7 @@ export function createGame(seats: SeatInfo[], rules: Rules, seed: number, now: n
     rules,
     seats,
     connected: seats.map(() => true),
-    opts: seats.map(() => ({ autoHora: false, noCall: false, tsumogiri: false })),
+    opts: seats.map(() => ({ autoHora: true, noCall: false, tsumogiri: false })),
     scores: [START_SCORE, START_SCORE, START_SCORE, START_SCORE],
     roundWind: 0,
     kyokuNum: 0,

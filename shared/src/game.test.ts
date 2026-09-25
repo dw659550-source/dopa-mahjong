@@ -48,6 +48,11 @@ for (const level of ["weak", "normal", "strong"] as const) {
   }
 }
 
+test("自動和了は初期設定でON", () => {
+  const s = createGame(humanSeats(), DEFAULT_RULES, 1, 0);
+  assert.ok(s.opts.every((o) => o.autoHora));
+});
+
 test("人間はタイムアウトで自動ツモ切りされ、局が進む", () => {
   let s = createGame(humanSeats(), DEFAULT_RULES, 42, 0);
   const firstDrawn = s.kyoku!.players[1].drawn;
@@ -187,6 +192,7 @@ test("立直宣言牌での放銃は供託が発生しない", () => {
 
 test("見逃し後、捨てた人が次に打牌するとフリテンになる", () => {
   let s = freshHumans();
+  s.opts[1].autoHora = false; // 手動で和了する人が見逃す場面
   setHand(s, 1, "123m456p789s77z22z", "9m");
   setHand(s, 2, "123m456p789s1344z", "2z");
   const t = s.kyoku!.players[2].drawn!;
