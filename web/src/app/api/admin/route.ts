@@ -198,6 +198,26 @@ const handlers: Record<string, Handler> = {
     });
   },
 
+  /** これまでに記録されたCPU対戦（人間1人＋CPU3人）を、まとめてランキングから除外する */
+  async excludeCpuMatches(db, ctx) {
+    const snap = await db.collection(MATCHES).where("excluded", "==", false).get();
+    const targets: string[] = [];
+    for (const d of snap.docs) {
+      const m = d.data() as MatchDoc;
+      if (m.players.filter((x) => x.isCpu).length !== 3) continue;
+      // 対人戦の空席をCPUで埋めた対局は対象外（ルームがCPU対戦として作られたものだけ）
+      const room = await db.collection(ROOMS).doc(m.roomCode).get();
+      if (room.exists && room.data()?.isCpuGame === false && room.data()?.createdAt <= m.startedAt) continue;
+      targets.push(m.id);
+    }
+    for (const id of targets) {
+      await handlers.setMatchExcluded(db, ctx, { matchId: id, excluded: true });
+      await db.collection(MATCHES).doc(id).update({ cpuGame: true });
+    }
+    await appendLog(db, ctx, "CPU対戦の一括除外", `CPU対戦 ${targets.length}件をランキングから除外`, { matchIds: targets });
+    return { count: targets.length };
+  },
+
   async setPlayerExcluded(db, ctx, p) {
     const m = mode(p.mode);
     const name = str(p.name, "名前");

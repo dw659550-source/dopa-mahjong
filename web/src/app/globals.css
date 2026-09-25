@@ -60,25 +60,33 @@ body {
   padding: 0;
   border: none;
 }
+/* 牌の大きさ（牌画像は幅24×高さ32） */
 .tile-xs {
-  width: 20px;
-  height: 27px;
+  --tw: 18px;
 }
 .tile-sm {
-  width: 25px;
-  height: 34px;
+  --tw: 22px;
 }
 .tile-md {
-  width: min(40px, calc((100vw - 36px) / 14.6));
-  height: calc(min(40px, calc((100vw - 36px) / 14.6)) * 1.36);
+  --tw: min(36px, calc((100vw - 36px) / 14.6));
 }
 .tile-lg {
-  width: 44px;
-  height: 60px;
+  --tw: 36px;
 }
-.tile-side {
-  transform: rotate(90deg);
-  margin: 0 4px;
+.tile-xs,
+.tile-sm,
+.tile-md,
+.tile-lg {
+  width: var(--tw);
+  height: calc(var(--tw) * 4 / 3);
+}
+/* 横向き（鳴いた牌・立直宣言牌）は横向き用の画像を使うので、幅と高さを入れ替えるだけ */
+.tile-side.tile-xs,
+.tile-side.tile-sm,
+.tile-side.tile-md,
+.tile-side.tile-lg {
+  width: calc(var(--tw) * 4 / 3);
+  height: var(--tw);
 }
 .tile-xs .tile-num {
   font-size: 11px;
@@ -150,6 +158,19 @@ body {
 .tile-back {
   background: linear-gradient(135deg, #1d8a63 0%, #0f5c41 100%);
   box-shadow: 0 2px 0 #0a3d2b, 0 3px 4px rgba(0, 0, 0, 0.35);
+}
+/* 画像の牌。枠や影は画像に含まれているので、要素側の背景・影は付けない */
+.tile-img {
+  background: transparent;
+  box-shadow: none;
+  border-radius: 3px;
+}
+.tile-img-el {
+  width: 100%;
+  height: 100%;
+  display: block;
+  pointer-events: none;
+  user-select: none;
 }
 .tile-clickable {
   cursor: pointer;
