@@ -271,3 +271,37 @@ test("飛び終了（マイナスで終了、0点ちょうどは続行）", () =
   const r = applyAction(s, { type: "tsumo", seat: 1 }, 100).state;
   assert.equal(r.next!.end, false);
 });
+
+test("人間同士で連打しても自動和了が優先される（捨てた瞬間に判定）", () => {
+  let s = freshHumans();
+  // 席1: 白のシャンポン待ち（自動和了ON）。席2: 白を捨ててから、すぐに次の牌も捨てようとする
+  setHand(s, 1, "123m456p789s77z55z", "9m");
+  setHand(s, 2, "123m456p789s1234z", "5z");
+  s.opts[1].autoHora = true;
+  s.connected[1] = false; // 接続が切れている扱いでも自動和了は働く
+  const white = s.kyoku!.players[2].drawn!;
+  const r1 = applyAction(s, { type: "discard", seat: 2, tile: white }, 100);
+  assert.equal(r1.state.phase, "result", "捨てた瞬間に自動でロンされる");
+  assert.equal(r1.state.result!.wins[0].seat, 1);
+  // 同じ時刻に届いた次の打牌（連打）は受け付けられない
+  const anyTile = r1.state.kyoku!.players[2].hand[0];
+  const r2 = applyAction(r1.state, { type: "discard", seat: 2, tile: anyTile }, 100);
+  assert.ok(r2.error);
+  assert.equal(r2.state.result!.wins[0].seat, 1);
+});
+
+test("自分のツモ牌で和了できるときは、ツモした瞬間に自動で和了する（連打のツモ切りは届かない）", () => {
+  let s = freshHumans();
+  // 席0: 立直中。次に引く牌（山の先頭）が和了牌になるようにする
+  setHand(s, 0, "123m456p789s77z55z", "9m");
+  const p0 = s.kyoku!.players[0];
+  p0.riichi = 1;
+  s.opts[0].autoHora = true;
+  const winTile = parseTiles("5z")[0] + 2; // 白（手牌とは別の牌ID）
+  s.kyoku!.wall.unshift(winTile);
+  const r = applyAction(s, { type: "discard", seat: 0, tile: p0.drawn! }, 100);
+  assert.equal(r.state.phase, "result");
+  assert.equal(r.state.result!.title, "ツモ");
+  const again = applyAction(r.state, { type: "discard", seat: 0, tile: winTile }, 100);
+  assert.ok(again.error, "和了後のツモ切りは受け付けない");
+});

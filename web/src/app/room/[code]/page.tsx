@@ -25,6 +25,9 @@ import {
 } from "@/lib/rooms";
 import { SE } from "@/lib/sounds";
 
+/** 進行役（CPU・時間切れ処理）の書き込み間隔の下限 */
+const DRIVER_MIN_INTERVAL_MS = 1000;
+
 export default function RoomPageWrapper() {
   return (
     <Suspense fallback={<p className="text-center text-dp-muted pt-10">読み込み中…</p>}>
@@ -161,6 +164,7 @@ function RoomPage() {
   // 同じ端末から送る書き込み同士がぶつかると、Firestoreがやり直し（待ち時間つき）をするため、
   // 自分の操作を送っている間は進行役の送信を止め、進行役の送信中に操作したときはその完了を待ってから送る。
   const inflight = useRef(false);
+  const lastDriverTickAt = useRef(0);
   const driverSending = useRef<Promise<unknown> | null>(null);
   const userBusy = useRef(0);
   const pendingKey = useRef(0);
@@ -237,10 +241,14 @@ function RoomPage() {
       if (!action) {
         const due = nextDueAt(st);
         const grace = amDriver ? 0 : 2500 + mySeat * 700;
-        if (due !== null && now >= due + grace) action = { type: "tick" };
+        // Firestoreは1つのデータへの書き込みが毎秒1回程度を超えると遅くなるため、
+        // 進行役の書き込みは最低 DRIVER_MIN_INTERVAL_MS あけ、その間に来たCPUの操作などはまとめて処理する
+        const throttled = Date.now() - lastDriverTickAt.current < DRIVER_MIN_INTERVAL_MS;
+        if (due !== null && now >= due + grace && !throttled) action = { type: "tick" };
       }
       if (!action) return;
       inflight.current = true;
+      if (action.type === "tick") lastDriverTickAt.current = Date.now();
       const p = sendGameAction(code, action);
       driverSending.current = p;
       try {

@@ -169,8 +169,12 @@ function startKyoku(s: GameState, now: number) {
   }
 }
 
+/**
+ * 自動和了するか。自動和了は最優先とし、接続状態に関係なく働く
+ * （接続の判定が一時的に外れた間に和了を見逃さないようにするため。仕様書6-1からの変更）。
+ */
 function isAuto(s: GameState, seat: number): boolean {
-  return s.seats[seat].isCpu || (s.opts[seat].autoHora && s.connected[seat]);
+  return s.seats[seat].isCpu || s.opts[seat].autoHora;
 }
 
 function autoTsumoCheck(s: GameState, seat: number, now: number): boolean {
