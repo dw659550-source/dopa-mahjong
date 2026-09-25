@@ -47,7 +47,14 @@ function RoomPage() {
   const [joinError, setJoinError] = useState<string | null>(null);
   const [room, setRoom] = useState<RoomDoc | null | undefined>(undefined);
   const [presence, setPresence] = useState<Record<string, PresenceDoc>>({});
-  const [optimistic, setOptimistic] = useState<{ state: GameState; base: string } | null>(null);
+  // 送信済みでまだサーバーに反映されていない自分の打牌
+  const [pending, setPending] = useState<{
+    seat: number;
+    tile: number;
+    riichi: boolean;
+    kyokuSerial: number;
+    riverLen: number;
+  } | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [clock, setClock] = useState(0);
 
@@ -94,7 +101,23 @@ function RoomPage() {
 
   const serverState = useMemo(() => parseState(room ?? null), [room]);
   // 送信中は手元で先に反映した状態を表示する（届いたら差し替え）
-  const state = optimistic && optimistic.base === room?.stateJson ? optimistic.state : serverState;
+  // 自分の打牌が確定するまでは、届いた最新の状態に打牌だけを重ねて表示する。
+  // 次のツモ牌は確定するまで表示しない（確定前に他家が鳴くと山の先頭が変わり、別の牌が配られるため）。
+  const state = useMemo(() => {
+    const st = serverState;
+    if (!pending || !st?.kyoku || st.phase !== "playing" || st.kyokuSerial !== pending.kyokuSerial) return st;
+    const p = st.kyoku.players[pending.seat];
+    if (p.river.length !== pending.riverLen || !p.hand.includes(pending.tile)) return st; // 反映済み
+    const r = applyAction(st, { type: "discard", seat: pending.seat, tile: pending.tile, riichi: pending.riichi }, serverNow());
+    if (r.error || r.state.phase !== "playing" || !r.state.kyoku) return st;
+    const me = r.state.kyoku.players[pending.seat];
+    if (me.drawn !== null) {
+      me.hand = me.hand.filter((t) => t !== me.drawn);
+      me.drawn = null;
+    }
+    me.mustDiscard = false;
+    return r.state;
+  }, [serverState, pending]);
 
   const mySeat = useMemo(() => {
     if (watch || !room || !playerId) return null;
@@ -136,12 +159,19 @@ function RoomPage() {
   }, [room?.gameSeats, presence, clock]);
 
   const inflight = useRef(false);
+  const pendingKey = useRef(0);
   const send = useCallback(
     async (a: Action, opts: { optimistic?: boolean } = {}) => {
-      const base = room?.stateJson;
-      if (opts.optimistic && serverState && base) {
-        const r = applyAction(serverState, a, serverNow());
-        if (!r.error) setOptimistic({ state: r.state, base });
+      const key = Date.now();
+      if (opts.optimistic && a.type === "discard" && serverState?.kyoku) {
+        setPending({
+          seat: a.seat,
+          tile: a.tile,
+          riichi: !!a.riichi,
+          kyokuSerial: serverState.kyokuSerial,
+          riverLen: serverState.kyoku.players[a.seat].river.length,
+        });
+        pendingKey.current = key;
       }
       let failed = false;
       try {
@@ -159,11 +189,13 @@ function RoomPage() {
           setTimeout(() => setToast(null), 1800);
         }
       }
-      // 成功時はサーバーの状態が届いた時点で自動的に差し替わる
-      if (failed) setOptimistic(null);
-      else setTimeout(() => setOptimistic((o) => (o && o.base === base ? null : o)), 1500);
+      // 成功時はサーバーの状態が届いた時点で自動的に重ね表示が外れる（念のため一定時間後にも外す）
+      if (pendingKey.current === key) {
+        if (failed) setPending(null);
+        else setTimeout(() => pendingKey.current === key && setPending(null), 5000);
+      }
     },
-    [code, room?.stateJson, serverState],
+    [code, serverState],
   );
 
   // 進行役：時間切れの自動ツモ切り・CPUの操作・次局への移行を行う。
