@@ -225,9 +225,38 @@ function DiscardTimer({ state, seat }: { state: GameState; seat: number }) {
   );
 }
 
+function SlotButton({
+  show,
+  color,
+  small,
+  onClick,
+  children,
+}: {
+  show: boolean;
+  color: string;
+  small?: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      className={`btn ${small ? "text-sm" : "text-lg"} px-1 py-2.5 h-12 w-full whitespace-nowrap ${color} ${
+        show ? "pop-in" : "invisible pointer-events-none"
+      }`}
+      disabled={!show}
+      aria-hidden={!show}
+      tabIndex={show ? 0 : -1}
+      onClick={onClick}
+    >
+      {children}
+    </button>
+  );
+}
+
 // ------------------------------------------------------------ 本体
 
 type Chooser =
+  | { kind: "ron"; options: RonTarget[] }
   | { kind: "call"; options: CallOption[] }
   | { kind: "kan"; ankan: Kind[]; kakan: Kind[]; minkan: CallOption[] }
   | null;
@@ -477,64 +506,48 @@ export default function GameView({ state, mySeat, onAction, connected }: Props) 
         <div className="card p-2 flex flex-col gap-2">
           <DiscardTimer state={state} seat={mySeat} />
 
-          {/* 鳴き・和了ボタン（押せるときだけ大きく表示） */}
-          <div className="flex flex-wrap gap-2 justify-center min-h-[52px] items-center">
-            {rons.map((r, i) => (
-              <button key={`ron${i}`} className="btn pop-in bg-dp-bad text-white text-xl px-6 py-3" onClick={() => doRon(r)}>
-                ロン{rons.length > 1 ? `（${state.seats[r.from].name}）` : ""}
-              </button>
-            ))}
-            {canTsumo && (
-              <button className="btn pop-in bg-dp-bad text-white text-xl px-6 py-3" onClick={() => act({ type: "tsumo", seat: mySeat })}>
-                ツモ
-              </button>
-            )}
-            {hasPon && (
-              <button className="btn pop-in bg-dp-accent text-black text-xl px-6 py-3" onClick={() => pressCall("pon")}>
-                ポン
-              </button>
-            )}
-            {hasChi && (
-              <button className="btn pop-in bg-dp-accent text-black text-xl px-6 py-3" onClick={() => pressCall("chi")}>
-                チー
-              </button>
-            )}
-            {kanCount > 0 && (
-              <button className="btn pop-in bg-dp-accent text-black text-xl px-6 py-3" onClick={pressKan}>
-                カン
-              </button>
-            )}
-            {riichiOk.length > 0 && (
-              <button
-                className={`btn pop-in text-xl px-6 py-3 ${riichiMode ? "bg-white text-black" : "bg-dp-accent2 text-black"}`}
-                onClick={() => {
-                  SE.button();
-                  setRiichiMode((v) => !v);
-                }}
-              >
-                {riichiMode ? "立直をやめる" : "立直"}
-              </button>
-            )}
-            {kyuushu && (
-              <button className="btn pop-in bg-dp-panel2 text-dp-text px-4 py-3" onClick={() => act({ type: "kyuushu", seat: mySeat })}>
-                九種九牌
-              </button>
-            )}
-            {!rons.length && !canTsumo && !calls.length && !kanCount && !riichiOk.length && !kyuushu && (
-              <span className="text-xs text-dp-muted">
-                {riichiMode
-                  ? "立直する牌を選んでください"
-                  : me.mustDiscard
-                    ? me.afterCall
-                      ? "鳴いた後の1枚を捨ててください"
-                      : "捨てる牌をタップ"
-                    : k.wall.length === 0
-                      ? "山がなくなりました。流局を待っています"
-                      : "ツモ待ち"}
-              </span>
-            )}
+          {/* 鳴き・和了ボタン。位置がずれて押し間違えないよう、各ボタンの場所は固定（押せないときは見えなくするだけ） */}
+          <div className="grid grid-cols-4 gap-1.5">
+            <SlotButton show={rons.length > 0} color="bg-dp-bad text-white" onClick={() => (rons.length === 1 ? doRon(rons[0]) : setChooser({ kind: "ron", options: rons }))}>
+              ロン
+            </SlotButton>
+            <SlotButton show={canTsumo} color="bg-dp-bad text-white" onClick={() => act({ type: "tsumo", seat: mySeat })}>
+              ツモ
+            </SlotButton>
+            <SlotButton
+              show={riichiOk.length > 0}
+              color={riichiMode ? "bg-white text-black" : "bg-dp-accent2 text-black"}
+              onClick={() => {
+                SE.button();
+                setRiichiMode((v) => !v);
+              }}
+            >
+              {riichiMode ? "やめる" : "立直"}
+            </SlotButton>
+            <SlotButton show={kyuushu} color="bg-dp-panel2 text-dp-text" small onClick={() => act({ type: "kyuushu", seat: mySeat })}>
+              九種九牌
+            </SlotButton>
+            <SlotButton show={hasPon} color="bg-dp-accent text-black" onClick={() => pressCall("pon")}>
+              ポン
+            </SlotButton>
+            <SlotButton show={hasChi} color="bg-dp-accent text-black" onClick={() => pressCall("chi")}>
+              チー
+            </SlotButton>
+            <SlotButton show={kanCount > 0} color="bg-dp-accent text-black" onClick={pressKan}>
+              カン
+            </SlotButton>
           </div>
-          {riichiMode && <p className="text-center text-xs text-dp-accent2">立直する牌を選んでください（光っていない牌は選べません）</p>}
+          <p className={`text-center text-xs h-4 ${riichiMode ? "text-dp-accent2" : "text-dp-muted"}`}>
+            {riichiMode
+              ? "立直する牌を選んでください（光っていない牌は選べません）"
+              : me.mustDiscard
+                ? me.afterCall
+                  ? "鳴いた後の1枚を捨ててください"
+                  : "捨てる牌をタップ"
+                : k.wall.length === 0
+                  ? "山がなくなりました。流局を待っています"
+                  : "ツモ待ち"}
+          </p>
 
           {/* 手牌 */}
           <div className="flex items-end justify-center pt-3 pb-1 overflow-x-auto">
@@ -593,7 +606,20 @@ export default function GameView({ state, mySeat, onAction, connected }: Props) 
       {chooser && mySeat !== null && (
         <div className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center p-3" onClick={() => setChooser(null)}>
           <div className="card p-4 w-full max-w-sm flex flex-col gap-2" onClick={(e) => e.stopPropagation()}>
-            <h3 className="font-black">どれで鳴きますか？</h3>
+            <h3 className="font-black">{chooser.kind === "ron" ? "どれでロンしますか？" : "どれで鳴きますか？"}</h3>
+            {chooser.kind === "ron" &&
+              chooser.options.map((r, i) => (
+                <button
+                  key={i}
+                  className="btn-secondary"
+                  onClick={() => {
+                    setChooser(null);
+                    doRon(r);
+                  }}
+                >
+                  {state.seats[r.from].name} の{r.type === "kakan" ? "加槓牌" : "捨て牌"}でロン
+                </button>
+              ))}
             {chooser.kind === "call" &&
               chooser.options.map((o, i) => (
                 <button key={i} className="btn-secondary flex items-center gap-2" onClick={() => doCall(o)}>

@@ -16,6 +16,7 @@ import {
   ranking,
   removeTiles,
   riichiDiscards,
+  ronTargetTile,
   roundLabel,
   waitsOf,
 } from "./query.ts";
@@ -365,7 +366,11 @@ function doCall(s: GameState, a: Extract<Action, { type: "chi" | "pon" | "minkan
   const opt = opts.find(
     (o) => o.type === a.type && o.from === a.from && o.index === a.index && o.tiles.slice().sort((x, y) => x - y).join(",") === want,
   );
-  if (!opt) fail("鳴けません");
+  if (!opt) {
+    const f = k.players[a.from].river;
+    const stillThere = a.index === f.length - 1 && f[a.index]?.calledBy === null;
+    fail(stillThere ? "鳴けません" : "間に合いませんでした（相手が次の牌を捨てたか、他の人が先に鳴きました）");
+  }
   const p = k.players[a.seat];
   const f = k.players[a.from];
   // 手元のツモ牌は山の先頭に戻す
@@ -454,7 +459,9 @@ function doTsumo(s: GameState, seat: number, now: number) {
 
 function doRon(s: GameState, seat: number, target: RonTarget, now: number) {
   const r = evalRon(s, seat, target);
-  if (!r) fail("ロンできません");
+  if (!r) {
+    fail(ronTargetTile(s, target) ? "ロンできません" : "間に合いませんでした（相手が次の牌を捨てました）");
+  }
   endWithWins(s, [{ seat, result: r }], target.from, target, now);
 }
 
