@@ -273,9 +273,28 @@ function MatchesTab({ api, flash }: { api: Api; flash: (m: string) => void }) {
   const { data, error, reload } = useLoader(() => api<MatchDoc[]>("listMatches", { limit: 100 }), [api]);
   return (
     <div className="flex flex-col gap-2">
-      <button className="btn-secondary self-start text-sm" onClick={() => void reload()}>
-        再読み込み
-      </button>
+      <div className="flex gap-2 flex-wrap">
+        <button className="btn-secondary text-sm" onClick={() => void reload()}>
+          再読み込み
+        </button>
+        <button
+          className="btn-danger text-sm"
+          onClick={() =>
+            confirmRun(
+              "これまでに記録されたCPU対戦（あなた＋CPU3人）を、まとめてランキングから除外します。よろしいですか？",
+              async () => {
+                const r = await api<{ count: number }>("excludeCpuMatches");
+                window.alert(`CPU対戦 ${r.count}件を除外しました`);
+              },
+              flash,
+              () => void reload(),
+            )
+          }
+        >
+          CPU対戦の記録をまとめてランキングから除外
+        </button>
+      </div>
+      <p className="text-xs text-dp-muted">新しいCPU対戦は、最初からランキングに含まれません。</p>
       {error && <p className="text-dp-bad text-sm">{error}</p>}
       {data && data.length === 0 && <p className="text-dp-muted text-sm">記録された対局はありません。</p>}
       {data?.map((m) => (
@@ -283,6 +302,7 @@ function MatchesTab({ api, flash }: { api: Api; flash: (m: string) => void }) {
           <div className="flex items-center justify-between">
             <span className="font-bold">
               {m.mode === "tonpu" ? "東風戦" : "東南戦"}・{fmtTime(m.endedAt)}
+              {m.cpuGame && <span className="ml-2 text-xs text-dp-muted">CPU戦</span>}
               {m.excluded && <span className="ml-2 text-dp-bad">除外中</span>}
             </span>
             <span className="text-xs text-dp-muted">{m.id}</span>

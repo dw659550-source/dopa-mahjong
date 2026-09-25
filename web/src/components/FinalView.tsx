@@ -8,10 +8,12 @@ export default function FinalView({
   state,
   recorded,
   onBackToRoom,
+  cpuGame,
 }: {
   state: GameState;
   recorded: boolean;
   onBackToRoom?: () => void;
+  cpuGame?: boolean;
 }) {
   const f = state.final!;
   return (
@@ -43,7 +45,11 @@ export default function FinalView({
         </tbody>
       </table>
       <p className="text-xs text-dp-muted text-center">
-        {recorded ? "この対局は戦績に記録されました。" : "戦績を記録しています…"}
+        {cpuGame
+          ? "CPU対戦はランキングに含まれません。"
+          : recorded
+            ? "この対局は戦績に記録されました。"
+            : "戦績を記録しています…"}
       </p>
       <div className="flex gap-2 justify-center">
         {onBackToRoom && (

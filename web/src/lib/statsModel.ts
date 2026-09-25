@@ -51,6 +51,8 @@ export interface MatchDoc {
   startedAt: number;
   endedAt: number;
   excluded: boolean;
+  /** CPU対戦（あなた＋CPU3人）。ランキングには含めない */
+  cpuGame?: boolean;
   players: MatchPlayerRecord[];
 }
 

@@ -461,10 +461,13 @@ async function prepareRecord(tx: Transaction, room: RoomDoc, state: GameState): 
     roomCode: room.code,
     startedAt: state.startedAt,
     endedAt: final.endedAt,
-    excluded: false,
+    // CPU対戦は記録だけ残し、ランキング（戦績）には加算しない
+    excluded: room.isCpuGame,
+    cpuGame: room.isCpuGame,
     players,
   };
   const out: RecordPlan = { match, players: [] };
+  if (room.isCpuGame) return out;
   for (const p of players) {
     if (p.isCpu) continue;
     const id = playerDocId(mode, p.name);
