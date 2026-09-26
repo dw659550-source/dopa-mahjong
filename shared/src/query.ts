@@ -365,7 +365,8 @@ export function discardDeadline(state: GameState, seat: number, timeoutMs: numbe
   if (!k || state.phase !== "playing") return null;
   const p = k.players[seat];
   if (!p.mustDiscard) return null;
-  const quick = (p.riichi > 0 || state.opts[seat].tsumogiri) && p.drawn !== null;
+  // 「ツモ切り」ボタンは廃止したので、古い対局データでONになっていても立直中だけが1秒
+  const quick = p.riichi > 0 && p.drawn !== null;
   return p.phaseSince + (quick ? autoMs : timeoutMs);
 }
 
