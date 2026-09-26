@@ -6,6 +6,7 @@ import {
   callableDiscard,
   callOptions,
   canKyuushu,
+  canNuki,
   dealerSeat,
   discardDeadline,
   evalRon,
@@ -13,6 +14,7 @@ import {
   kakanOptions,
   kuikaeKinds,
   legalDiscards,
+  playerCount,
   ranking,
   removeTiles,
   riichiDiscards,
@@ -21,16 +23,14 @@ import {
   waitsOf,
 } from "./query.ts";
 import { mulberry32, shuffle } from "./rng.ts";
-import { isWind, isYaochu, kindOf, isDragon, type Kind, type Tile } from "./tiles.ts";
+import { NORTH, isSanmaRemoved, isWind, isYaochu, kindOf, isDragon, type Kind, type Tile } from "./tiles.ts";
 import {
   AUTO_TSUMOGIRI_MS,
   DISCARD_TIMEOUT_MS,
   EXHAUST_GRACE_MS,
-  GAME_LENGTH_ROUNDS,
   RESULT_DISPLAY_MS,
-  RETURN_SCORE,
-  START_SCORE,
-  UMA,
+  roundLimits,
+  scoreRules,
   type Action,
   type FinalResult,
   type GameEventType,
@@ -55,14 +55,15 @@ function clone<T>(v: T): T {
 }
 
 export function createGame(seats: SeatInfo[], rules: Rules, seed: number, now: number): GameState {
-  if (seats.length !== 4) fail("4人必要です");
+  if (seats.length !== 4 && seats.length !== 3) fail("3人または4人必要です");
+  const n = seats.length;
   const s: GameState = {
     version: 1,
-    rules,
+    rules: { ...rules, players: n as 3 | 4 },
     seats,
     connected: seats.map(() => true),
     opts: seats.map(() => ({ autoHora: true, noCall: false, tsumogiri: false })),
-    scores: [START_SCORE, START_SCORE, START_SCORE, START_SCORE],
+    scores: seats.map(() => scoreRules(n).start),
     roundWind: 0,
     kyokuNum: 0,
     honba: 0,
@@ -71,7 +72,7 @@ export function createGame(seats: SeatInfo[], rules: Rules, seed: number, now: n
     kyoku: null,
     result: null,
     resultUntil: 0,
-    resultAck: [false, false, false, false],
+    resultAck: seats.map(() => false),
     next: null,
     final: null,
     stats: seats.map(() => ({ kyokus: 0, wins: 0, dealins: 0, calls: 0, riichis: 0, yakuman: [] })),
@@ -113,6 +114,9 @@ function newPlayer(now: number): PlayerState {
     pendingKanDora: 0,
     kakanTile: null,
     kakanPendingMiss: [],
+    nuki: [],
+    nukiTile: null,
+    nukiPendingMiss: [],
     pao: null,
     calledThisKyoku: false,
     riichiThisKyoku: false,
@@ -122,16 +126,16 @@ function newPlayer(now: number): PlayerState {
 function startKyoku(s: GameState, now: number) {
   s.kyokuSerial++;
   const rng = mulberry32((s.seed ^ Math.imul(s.kyokuSerial, 0x9e3779b1)) >>> 0);
-  const all = shuffle(
-    Array.from({ length: 136 }, (_, i) => i),
-    rng,
-  );
-  const dead = all.slice(136 - 14);
-  const wall = all.slice(0, 136 - 14);
-  const players = [0, 1, 2, 3].map(() => newPlayer(now));
+  const n = playerCount(s);
+  // 三人麻雀は二萬〜八萬を使わない（108枚）
+  const tiles = Array.from({ length: 136 }, (_, i) => i).filter((t) => n === 4 || !isSanmaRemoved(kindOf(t)));
+  const all = shuffle(tiles, rng);
+  const dead = all.slice(all.length - 14);
+  const wall = all.slice(0, all.length - 14);
+  const players = Array.from({ length: n }, () => newPlayer(now));
   const dealer = dealerSeat(s);
   for (let r = 0; r < 13; r++) {
-    for (let i = 0; i < 4; i++) players[(dealer + i) % 4].hand.push(wall.shift()!);
+    for (let i = 0; i < n; i++) players[(dealer + i) % n].hand.push(wall.shift()!);
   }
   s.kyoku = {
     wall,
@@ -142,7 +146,7 @@ function startKyoku(s: GameState, now: number) {
     players,
     kanCount: 0,
     kanSeats: [],
-    firstDiscardKinds: [null, null, null, null],
+    firstDiscardKinds: players.map(() => null),
     riichiCount: 0,
     pendingAbort: null,
     allDoneAt: null,
@@ -152,12 +156,12 @@ function startKyoku(s: GameState, now: number) {
   s.phase = "playing";
   s.result = null;
   s.next = null;
-  s.resultAck = [false, false, false, false];
+  s.resultAck = players.map(() => false);
   for (const o of s.opts) o.noCall = false;
   pushEvent(s, "kyokuStart", null, now);
   // 全員に第1ツモ（親から順）
-  for (let i = 0; i < 4; i++) {
-    const seat = (dealer + i) % 4;
+  for (let i = 0; i < n; i++) {
+    const seat = (dealer + i) % n;
     const p = players[seat];
     const t = s.kyoku.wall.shift()!;
     p.hand.push(t);
@@ -165,9 +169,9 @@ function startKyoku(s: GameState, now: number) {
     p.mustDiscard = true;
     p.phaseSince = now;
   }
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < n; i++) {
     if (s.phase !== "playing") break;
-    autoTsumoCheck(s, (dealer + i) % 4, now);
+    autoTsumoCheck(s, (dealer + i) % n, now);
   }
 }
 
@@ -189,7 +193,7 @@ function autoTsumoCheck(s: GameState, seat: number, now: number): boolean {
 
 function autoRonCheck(s: GameState, target: RonTarget, now: number): boolean {
   const winners: { seat: number; result: WinResult }[] = [];
-  for (let seat = 0; seat < 4; seat++) {
+  for (let seat = 0; seat < playerCount(s); seat++) {
     if (seat === target.from || !isAuto(s, seat)) continue;
     const r = evalRon(s, seat, target);
     if (r) winners.push({ seat, result: r });
@@ -211,10 +215,12 @@ function autoRonCheck(s: GameState, target: RonTarget, now: number): boolean {
 function autoRonLateCheck(s: GameState, seat: number, now: number): boolean {
   if (!isAuto(s, seat)) return false;
   const k = s.kyoku!;
-  for (let i = 1; i < 4; i++) {
-    const f = (seat + i) % 4; // 下家から順に見る
+  const n = playerCount(s);
+  for (let i = 1; i < n; i++) {
+    const f = (seat + i) % n; // 下家から順に見る
     const targets: RonTarget[] = [];
     if (k.players[f].kakanTile !== null) targets.push({ type: "kakan", from: f });
+    if (k.players[f].nukiTile != null) targets.push({ type: "nuki", from: f });
     const idx = k.players[f].river.length - 1;
     if (idx >= 0) targets.push({ type: "discard", from: f, index: idx });
     for (const target of targets) {
@@ -252,12 +258,13 @@ function flipPendingDora(s: GameState, p: PlayerState) {
   }
 }
 
-function rinshanDraw(s: GameState, seat: number, immediateFlip: boolean, now: number) {
+/** 嶺上ツモ。kanDora: 暗槓は "now"（即乗り）、明槓・加槓は "later"（後めくり）、北抜きは null（めくらない） */
+function rinshanDraw(s: GameState, seat: number, kanDora: "now" | "later" | null, now: number) {
   const k = s.kyoku!;
   const p = k.players[seat];
   flipPendingDora(s, p);
-  if (immediateFlip) k.doraRevealed = Math.min(5, k.doraRevealed + 1);
-  else p.pendingKanDora += 1;
+  if (kanDora === "now") k.doraRevealed = Math.min(5, k.doraRevealed + 1);
+  else if (kanDora === "later") p.pendingKanDora += 1;
   const t = k.rinshan.shift()!;
   // 王牌を14枚に保つため、山の最後尾を王牌へ移す（海底がずれる）
   k.rinshan.push(k.wall.pop()!);
@@ -304,11 +311,16 @@ function closeOwnWindow(s: GameState, seat: number) {
     p.kakanTile = null;
     p.kakanPendingMiss = [];
   }
+  if (p.nukiTile != null) {
+    markMisses(s, p.nukiPendingMiss ?? []);
+    p.nukiTile = null;
+    p.nukiPendingMiss = [];
+  }
 }
 
 function missCandidates(s: GameState, from: number, kind: Kind): number[] {
   const out: number[] = [];
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < playerCount(s); i++) {
     if (i === from) continue;
     if (waitsOf(s.kyoku!.players[i]).includes(kind)) out.push(i);
   }
@@ -380,7 +392,7 @@ function doDiscard(s: GameState, seat: number, tile: Tile, riichi: boolean, now:
 
   if (autoRonCheck(s, { type: "discard", from: seat, index: p.river.length - 1 }, now)) return;
 
-  if (wasFirst) {
+  if (wasFirst && playerCount(s) === 4) {
     const f = k.firstDiscardKinds;
     if (f.every((x) => x !== null && x === f[0]) && isWind(f[0]!)) {
       endAbort(s, "四風連打", null, now);
@@ -432,7 +444,7 @@ function doCall(s: GameState, a: Extract<Action, { type: "chi" | "pon" | "minkan
   if (a.type === "minkan") {
     pushEvent(s, "kan", a.seat, now);
     afterKan(s, a.seat);
-    rinshanDraw(s, a.seat, false, now);
+    rinshanDraw(s, a.seat, "later", now);
     return;
   }
   pushEvent(s, a.type, a.seat, now);
@@ -459,7 +471,7 @@ function doAnkan(s: GameState, seat: number, kind: Kind, now: number) {
   p.firstTurn = false;
   pushEvent(s, "kan", seat, now);
   afterKan(s, seat);
-  rinshanDraw(s, seat, true, now);
+  rinshanDraw(s, seat, "now", now);
 }
 
 function doKakan(s: GameState, seat: number, kind: Kind, now: number) {
@@ -481,7 +493,28 @@ function doKakan(s: GameState, seat: number, kind: Kind, now: number) {
   // 発声と和了打診（槍槓）→ 一発消滅 → 嶺上ツモ
   if (autoRonCheck(s, { type: "kakan", from: seat }, now)) return;
   afterKan(s, seat);
-  rinshanDraw(s, seat, false, now);
+  rinshanDraw(s, seat, "later", now);
+}
+
+/** 三人麻雀の北抜き（抜いた北は抜きドラ。鳴きと同じく一発などは消える。抜いた北へのロンあり） */
+function doNuki(s: GameState, seat: number, now: number) {
+  if (!canNuki(s, seat)) fail("北を抜けません");
+  const k = s.kyoku!;
+  const p = k.players[seat];
+  const tile = p.drawn !== null && kindOf(p.drawn) === NORTH ? p.drawn : p.hand.find((t) => kindOf(t) === NORTH)!;
+  p.hand = removeTiles(p.hand, [tile]);
+  p.nuki = [...(p.nuki ?? []), tile];
+  p.drawn = null;
+  p.firstTurn = false;
+  // 前に抜いた北へのロンの権利は、ここで消える
+  if (p.nukiTile != null) markMisses(s, p.nukiPendingMiss ?? []);
+  p.nukiTile = tile;
+  p.nukiPendingMiss = missCandidates(s, seat, NORTH);
+  pushEvent(s, "nuki", seat, now);
+  // 発声と和了打診 → 一発消滅 → 嶺上ツモ
+  if (autoRonCheck(s, { type: "nuki", from: seat }, now)) return;
+  for (const x of k.players) x.ippatsu = false;
+  rinshanDraw(s, seat, null, now);
 }
 
 function doTsumo(s: GameState, seat: number, now: number) {
@@ -500,7 +533,7 @@ function doRon(s: GameState, seat: number, target: RonTarget, now: number) {
 
 function kyokuStats(s: GameState) {
   const k = s.kyoku!;
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < playerCount(s); i++) {
     s.stats[i].kyokus++;
     if (k.players[i].calledThisKyoku) s.stats[i].calls++;
     if (k.players[i].riichiThisKyoku) s.stats[i].riichis++;
@@ -521,7 +554,8 @@ function endWithWins(
 ) {
   const k = s.kyoku!;
   const dealer = dealerSeat(s);
-  const deltas = [0, 0, 0, 0];
+  const n = playerCount(s);
+  const deltas = s.seats.map(() => 0);
   const wins: WinDetail[] = [];
 
   // 立直宣言牌での放銃は供託が発生しない
@@ -544,8 +578,9 @@ function endWithWins(
       deltas[pao] -= total + 300 * s.honba;
       deltas[w] += total + 300 * s.honba;
     } else {
+      // 三人麻雀はツモ損（いない1人の分は誰も払わない）
       const pay = tsumoPoints(r.basePoints, isDealer);
-      for (let o = 0; o < 4; o++) {
+      for (let o = 0; o < n; o++) {
         if (o === w) continue;
         const amount = (o === dealer ? pay.fromDealer : pay.fromChild) + 100 * s.honba;
         deltas[o] -= amount;
@@ -557,8 +592,8 @@ function endWithWins(
     s.kyotaku = 0;
     wins.push(winDetail(w, null, r, p, p.drawn!, total, pao));
   } else {
-    const sorted = winners.slice().sort((a, b) => ((a.seat - fromSeat + 4) % 4) - ((b.seat - fromSeat + 4) % 4));
-    const tile = target!.type === "kakan" ? k.players[fromSeat].kakanTile! : k.players[fromSeat].river[(target as { index: number }).index].tile;
+    const sorted = winners.slice().sort((a, b) => ((a.seat - fromSeat + n) % n) - ((b.seat - fromSeat + n) % n));
+    const tile = ronTargetTile(s, target!)!.tile;
     sorted.forEach(({ seat: w, result: r }, i) => {
       const p = k.players[w];
       const pts = ronPoints(r.basePoints, w === dealer);
@@ -585,7 +620,7 @@ function endWithWins(
     s.stats[w.seat].wins++;
     if (w.yakumanMult > 0) s.stats[w.seat].yakuman.push(w.yaku.map((y) => y.name).join("・"));
   }
-  const revealed: (Tile[] | null)[] = [null, null, null, null];
+  const revealed: (Tile[] | null)[] = s.seats.map(() => null);
   for (const w of wins) revealed[w.seat] = w.hand;
   const renchan = wins.some((w) => w.seat === dealer);
   pushEvent(s, fromSeat === null ? "tsumo" : "ron", wins[0].seat, now);
@@ -597,7 +632,7 @@ function endWithWins(
       roundLabel: roundLabel(s),
       wins,
       deltas,
-      tenpai: [false, false, false, false],
+      tenpai: s.seats.map(() => false),
       revealed,
       doraIndicators: k.doraIndicators.slice(0, k.doraRevealed),
       uraIndicators: wins.some((w) => k.players[w.seat].riichi > 0) ? k.uraIndicators.slice(0, k.doraRevealed) : [],
@@ -640,7 +675,7 @@ function winDetail(
 function endAbort(s: GameState, title: string, revealSeat: number | null, now: number) {
   const k = s.kyoku!;
   kyokuStats(s);
-  const revealed: (Tile[] | null)[] = [null, null, null, null];
+  const revealed: (Tile[] | null)[] = s.seats.map(() => null);
   if (revealSeat !== null) revealed[revealSeat] = k.players[revealSeat].hand.slice();
   pushEvent(s, "abort", revealSeat, now);
   finishKyoku(
@@ -650,8 +685,8 @@ function endAbort(s: GameState, title: string, revealSeat: number | null, now: n
       title,
       roundLabel: roundLabel(s),
       wins: [],
-      deltas: [0, 0, 0, 0],
-      tenpai: [false, false, false, false],
+      deltas: s.seats.map(() => 0),
+      tenpai: s.seats.map(() => false),
       revealed,
       doraIndicators: k.doraIndicators.slice(0, k.doraRevealed),
       uraIndicators: [],
@@ -668,7 +703,8 @@ function endAbort(s: GameState, title: string, revealSeat: number | null, now: n
 function endExhaustive(s: GameState, now: number) {
   const k = s.kyoku!;
   const dealer = dealerSeat(s);
-  const deltas = [0, 0, 0, 0];
+  const n = playerCount(s);
+  const deltas = s.seats.map(() => 0);
   const tenpai = k.players.map((p) => waitsOf(p).length > 0);
   const nagashi: number[] = [];
   k.players.forEach((p, i) => {
@@ -677,7 +713,7 @@ function endExhaustive(s: GameState, now: number) {
   if (nagashi.length > 0) {
     for (const w of nagashi) {
       const pay = tsumoPoints(2000, w === dealer);
-      for (let o = 0; o < 4; o++) {
+      for (let o = 0; o < n; o++) {
         if (o === w) continue;
         const amount = o === dealer ? pay.fromDealer : pay.fromChild;
         deltas[o] -= amount;
@@ -685,9 +721,11 @@ function endExhaustive(s: GameState, now: number) {
       }
     }
   } else {
-    const n = tenpai.filter(Boolean).length;
-    if (n > 0 && n < 4) {
-      for (let i = 0; i < 4; i++) deltas[i] += tenpai[i] ? 3000 / n : -3000 / (4 - n);
+    // ノーテン罰符は四人麻雀で場に3000点。三人麻雀はいない1人の分を除いた2000点（ツモ損と同じ考え方）
+    const pool = 1000 * (n - 1);
+    const t = tenpai.filter(Boolean).length;
+    if (t > 0 && t < n) {
+      for (let i = 0; i < n; i++) deltas[i] += tenpai[i] ? pool / t : -pool / (n - t);
     }
   }
   kyokuStats(s);
@@ -724,7 +762,7 @@ function finishKyoku(
   now: number,
 ) {
   const scoresBefore = s.scores.slice();
-  for (let i = 0; i < 4; i++) s.scores[i] += result.deltas[i];
+  for (let i = 0; i < s.scores.length; i++) s.scores[i] += result.deltas[i];
   result.scoresAfter = s.scores.slice();
   const k = s.kyoku;
   s.lastKifu = k
@@ -740,6 +778,7 @@ function finishKyoku(
           melds: p.melds.map((m) => ({ ...m, tiles: m.tiles.slice() })),
           river: p.river.map((r) => ({ tile: r.tile, tsumogiri: r.tsumogiri, riichi: r.riichi, calledBy: r.calledBy })),
           riichi: p.riichi > 0,
+          nuki: (p.nuki ?? []).slice(),
         })),
         result: JSON.parse(JSON.stringify(result)),
       }
@@ -747,13 +786,15 @@ function finishKyoku(
   s.result = result;
   s.phase = "result";
   s.resultUntil = now + RESULT_DISPLAY_MS;
-  s.resultAck = [false, false, false, false];
+  s.resultAck = s.seats.map(() => false);
   s.next = decideNext(s, renchan, isRyukyoku, isAbort);
 }
 
 function decideNext(s: GameState, renchan: boolean, isRyukyoku: boolean, isAbort: boolean) {
-  const { last: lastIdx, limit: limitIdx } = GAME_LENGTH_ROUNDS[s.rules.length];
-  const cur = s.roundWind * 4 + s.kyokuNum;
+  const n = playerCount(s);
+  const { last: lastIdx, limit: limitIdx } = roundLimits(s.rules.length, n);
+  const RETURN_SCORE = scoreRules(n).ret;
+  const cur = s.roundWind * n + s.kyokuNum;
   const dealer = dealerSeat(s);
   let nextIdx = cur;
   let honba = s.honba;
@@ -762,7 +803,7 @@ function decideNext(s: GameState, renchan: boolean, isRyukyoku: boolean, isAbort
     nextIdx = cur + 1;
     honba = isRyukyoku ? honba + 1 : 0;
   }
-  const plan = { end: false, roundWind: Math.floor(nextIdx / 4), kyokuNum: nextIdx % 4, honba };
+  const plan = { end: false, roundWind: Math.floor(nextIdx / n), kyokuNum: nextIdx % n, honba };
   if (s.scores.some((x) => x < 0)) return { ...plan, end: true };
   if (cur >= lastIdx) {
     if (renchan) {
@@ -793,9 +834,11 @@ function finishGame(s: GameState, now: number) {
   s.scores[top] += s.kyotaku * 1000;
   s.kyotaku = 0;
   const ranks = ranking(s.scores);
-  const players = [0, 1, 2, 3].map((seat) => {
+  const n = playerCount(s);
+  const sr = scoreRules(n);
+  const players = s.seats.map((_, seat) => {
     const rank = ranks[seat];
-    const raw = (s.scores[seat] - RETURN_SCORE) / 1000 + UMA[rank - 1] + (rank === 1 ? ((RETURN_SCORE - START_SCORE) * 4) / 1000 : 0);
+    const raw = (s.scores[seat] - sr.ret) / 1000 + sr.uma[rank - 1] + (rank === 1 ? ((sr.ret - sr.start) * n) / 1000 : 0);
     return {
       seat,
       name: s.seats[seat].name,
@@ -826,7 +869,8 @@ function collectDue(s: GameState, now: number): DueEvent[] {
   if (k.allDoneAt !== null) {
     out.push({ at: k.allDoneAt + EXHAUST_GRACE_MS, run: () => endExhaustive(s, now) });
   }
-  for (let seat = 0; seat < 4; seat++) {
+  const n = playerCount(s);
+  for (let seat = 0; seat < n; seat++) {
     const p = k.players[seat];
     if (s.seats[seat].isCpu) {
       if (p.mustDiscard) {
@@ -844,7 +888,7 @@ function collectDue(s: GameState, now: number): DueEvent[] {
           },
         });
       }
-      for (let from = 0; from < 4; from++) {
+      for (let from = 0; from < n; from++) {
         if (from === seat) continue;
         const c = callableDiscard(s, from);
         if (!c) continue;
@@ -940,6 +984,8 @@ function applyInternal(s: GameState, a: Action, now: number) {
       return doAnkan(s, a.seat, a.kind, now);
     case "kakan":
       return doKakan(s, a.seat, a.kind, now);
+    case "nuki":
+      return doNuki(s, a.seat, now);
     case "kyuushu":
       if (!canKyuushu(s, a.seat)) fail("九種九牌ではありません");
       return endAbort(s, "九種九牌", a.seat, now);

@@ -5,10 +5,10 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { GAME_LENGTH_LABEL, kindOf, type Tile as TileId } from "@dopa/shared";
 import Tile from "@/components/Tile";
-import { Melds } from "@/components/GameView";
+import { Melds, NukiTiles } from "@/components/GameView";
 import { WinBlock } from "@/components/ResultView";
 import { fetchKifu, fetchMatch } from "@/lib/rooms";
-import { fmtPoints, type KifuView, type MatchDoc } from "@/lib/statsModel";
+import { fmtPoints, statsModeLabel, type KifuView, type MatchDoc } from "@/lib/statsModel";
 
 const WIND = ["東", "南", "西", "北"];
 
@@ -57,7 +57,7 @@ export default function MatchPage() {
         <div className="card p-4 flex flex-col gap-2">
           <p className="text-sm">
             {new Date(match.endedAt).toLocaleString("ja-JP")}
-            <span className="ml-2 text-dp-muted">{GAME_LENGTH_LABEL[match.mode] ?? match.mode}</span>
+            <span className="ml-2 text-dp-muted">{statsModeLabel(match.mode)}</span>
             {match.cpuGame && <span className="ml-2 text-xs text-dp-muted">CPU対戦</span>}
           </p>
           <table className="w-full text-sm">
@@ -145,9 +145,9 @@ function KyokuBoard({ k }: { k: KifuView }) {
         )}
       </div>
 
-      {[0, 1, 2, 3].map((seat) => {
-        const p = k.players[seat];
-        const wind = WIND[(seat - k.dealer + 4) % 4];
+      {k.players.map((p, seat) => {
+        const n = k.players.length;
+        const wind = WIND[(seat - k.dealer + n) % n];
         const delta = r.deltas[seat];
         const concealed = sortTiles(p.drawn !== null ? p.hand.filter((t) => t !== p.drawn) : p.hand);
         return (
@@ -176,10 +176,11 @@ function KyokuBoard({ k }: { k: KifuView }) {
                 </>
               )}
             </div>
-            {p.melds.length > 0 && (
+            {(p.melds.length > 0 || (p.nuki ?? []).length > 0) && (
               <div className="flex items-center gap-1">
                 <span className="w-8 text-[10px] text-dp-muted">副露</span>
-                <Melds melds={p.melds} seat={seat} aka={aka} />
+                <NukiTiles tiles={p.nuki ?? []} aka={aka} size="xs" />
+                <Melds melds={p.melds} seat={seat} aka={aka} n={n} />
               </div>
             )}
             <div className="flex flex-wrap gap-[2px] content-start rounded-lg bg-black/25 p-1">

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { subscribeAllPlayerStats } from "@/lib/rooms";
-import { combineByName, derive, fmtPoints, type PlayerStatsDoc } from "@/lib/statsModel";
+import { combineByName, derive, fmtPoints, isSanmaMode, type PlayerStatsDoc } from "@/lib/statsModel";
 import StatsDetail from "./StatsDetail";
 
 type SortKey = "totalPoints" | "avgRank" | "avgPoints";
@@ -29,12 +29,14 @@ export default function RankingList({
   const [sort, setSort] = useState<SortKey>("totalPoints");
   const [docs, setDocs] = useState<PlayerStatsDoc[] | null>(null);
   const [open, setOpen] = useState<string | null>(null);
+  // 四人麻雀と三人麻雀は別集計
+  const [sanma, setSanma] = useState(false);
 
   useEffect(() => subscribeAllPlayerStats(setDocs), []);
 
   const rows = useMemo(() => {
     if (!docs) return [];
-    const list = combineByName(docs)
+    const list = combineByName(docs.filter((d) => isSanmaMode(d.mode) === sanma))
       .filter((d) => !d.excluded && d.games > 0)
       .map((d) => ({ d, x: derive(d) }));
     list.sort((a, b) => {
@@ -43,12 +45,20 @@ export default function RankingList({
       return a.x.avgRank - b.x.avgRank || b.d.games - a.d.games;
     });
     return list;
-  }, [docs, sort]);
+  }, [docs, sort, sanma]);
 
   return (
     <div className="flex flex-col gap-2">
       <div className="card p-3 flex flex-col gap-2">
-        <p className="text-xs text-dp-muted">東風戦・東南戦・一荘戦の合計です</p>
+        <div className="flex gap-1.5 items-center">
+          <button className={!sanma ? "chip-on" : "chip-off"} onClick={() => setSanma(false)}>
+            四人麻雀
+          </button>
+          <button className={sanma ? "chip-on" : "chip-off"} onClick={() => setSanma(true)}>
+            三人麻雀
+          </button>
+        </div>
+        <p className="text-xs text-dp-muted">東風戦・東南戦・一荘戦の合計です（四人麻雀と三人麻雀は別に集計）</p>
         <div className="flex gap-1.5 flex-wrap items-center">
           <span className="text-xs text-dp-muted mr-1">並べ替え</span>
           {(Object.keys(SORT_LABEL) as SortKey[]).map((k) => (
@@ -89,7 +99,7 @@ export default function RankingList({
             </div>
             {open === d.name && (
               <div className="mt-3 flex flex-col gap-2">
-                <StatsDetail d={d} />
+                <StatsDetail d={d} players={sanma ? 3 : 4} />
                 <Link href={`/player?name=${encodeURIComponent(d.name)}`} className="btn-secondary text-center text-sm"
                   target={openHistoryInNewTab ? "_blank" : undefined}
                   rel={openHistoryInNewTab ? "noopener" : undefined}

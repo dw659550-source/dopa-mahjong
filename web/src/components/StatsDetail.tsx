@@ -4,7 +4,7 @@ import { Fragment } from "react";
 import { derive, fmtPoints, pct, type PlayerStatsDoc } from "@/lib/statsModel";
 
 /** 1人ぶんの戦績の詳細（ランキングの「＋詳細」と戦績ページで使う） */
-export default function StatsDetail({ d }: { d: PlayerStatsDoc }) {
+export default function StatsDetail({ d, players = 4 }: { d: PlayerStatsDoc; players?: 3 | 4 }) {
   const x = derive(d);
   return (
     <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
@@ -14,7 +14,7 @@ export default function StatsDetail({ d }: { d: PlayerStatsDoc }) {
       <Stat label="平均得点" v={fmtPoints(x.avgPoints)} />
       <Stat label="平均順位" v={x.avgRank.toFixed(2)} />
       <span />
-      {[d.rank1, d.rank2, d.rank3, d.rank4].map((n, j) => (
+      {[d.rank1, d.rank2, d.rank3, d.rank4].slice(0, players).map((n, j) => (
         <Fragment key={j}>
           <Stat label={`${j + 1}位率`} v={pct(x.rankRates[j])} />
           <Stat label={`${j + 1}位回数`} v={`${n}回`} />

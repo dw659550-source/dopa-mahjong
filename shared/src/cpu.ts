@@ -5,7 +5,9 @@ import {
   baseHand,
   callOptions,
   canKyuushu,
+  canNuki,
   doraIndicatorsShown,
+  isSanma,
   isMenzen,
   kakanOptions,
   legalDiscards,
@@ -18,7 +20,7 @@ import { hashUnit } from "./rng.ts";
 import { shanten } from "./shanten.ts";
 import {
   YAOCHU_KINDS,
-  doraFromIndicator,
+  doraFromIndicatorFor,
   isDragon,
   isHonor,
   isRed,
@@ -50,7 +52,10 @@ function visibleCounts(s: GameState, seat: number): number[] {
   for (const p of k.players) {
     for (const r of p.river) if (r.calledBy === null) c[kindOf(r.tile)]++;
     for (const m of p.melds) for (const t of m.tiles) c[kindOf(t)]++;
+    for (const t of p.nuki ?? []) c[kindOf(t)]++;
   }
+  // 三人麻雀で使わない牌は「すべて見えている」扱いにする（有効牌に数えない）
+  if (isSanma(s)) for (let kd = 1; kd <= 7; kd++) c[kd] = 4;
   for (const t of doraIndicatorsShown(s)) c[kindOf(t)]++;
   return c;
 }
@@ -69,7 +74,7 @@ function ukeire(counts: number[], meldCount: number, visible: number[], base: nu
 function threats(s: GameState, seat: number, level: CpuLevel): number[] {
   const k = s.kyoku!;
   const out: number[] = [];
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < k.players.length; i++) {
     if (i === seat) continue;
     const p = k.players[i];
     if (p.riichi > 0) out.push(i);
@@ -107,7 +112,7 @@ function safety(s: GameState, kind: Kind, threatSeats: number[], visible: number
 }
 
 function doraKinds(s: GameState): Kind[] {
-  return doraIndicatorsShown(s).map((t) => doraFromIndicator(kindOf(t)));
+  return doraIndicatorsShown(s).map((t) => doraFromIndicatorFor(kindOf(t), isSanma(s)));
 }
 
 function isYakuhai(s: GameState, seat: number, kind: Kind): boolean {
@@ -153,6 +158,9 @@ export function cpuChooseSelfAction(s: GameState, seat: number): Action {
   const k = s.kyoku!;
   const p = k.players[seat];
   const level = s.seats[seat].cpuLevel;
+
+  // 北は抜けるときは常に抜く（抜きドラ）
+  if (canNuki(s, seat)) return { type: "nuki", seat };
 
   if (p.riichi > 0) {
     const ak = ankanOptions(s, seat);

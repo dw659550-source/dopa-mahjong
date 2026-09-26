@@ -71,6 +71,18 @@ export function doraFromIndicator(indicatorKind: Kind): Kind {
   return HAKU + ((indicatorKind - HAKU + 1) % 3);
 }
 
+/** 三人麻雀で使わない牌種（二萬〜八萬） */
+export function isSanmaRemoved(kind: Kind): boolean {
+  return kind >= 1 && kind <= 7;
+}
+
+/** ドラ表示牌からドラの牌種を求める（三人麻雀では一萬の次は九萬、九萬の次は一萬） */
+export function doraFromIndicatorFor(indicatorKind: Kind, sanma: boolean): Kind {
+  if (sanma && indicatorKind === 0) return 8;
+  if (sanma && indicatorKind === 8) return 0;
+  return doraFromIndicator(indicatorKind);
+}
+
 export function toCounts(tiles: readonly Tile[]): number[] {
   const counts = new Array<number>(NUM_KINDS).fill(0);
   for (const t of tiles) counts[kindOf(t)]++;

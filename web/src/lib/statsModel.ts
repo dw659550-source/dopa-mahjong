@@ -1,5 +1,28 @@
 // 戦績データの形と計算（ブラウザ・管理画面サーバーの両方で使う）
-import type { GameLength, KifuRecord } from "@dopa/shared";
+import { GAME_LENGTH_LABEL, type GameLength, type KifuRecord, type Rules } from "@dopa/shared";
+
+/**
+ * 戦績を集計する単位（対局の長さ＋人数）。四人麻雀は "tonpu" など、三人麻雀は "sanma_tonpu" など。
+ * 三人麻雀は点数の付き方が違うので、戦績・ランキングは四人麻雀と別に集計する。
+ */
+export type StatsMode = GameLength | `sanma_${GameLength}`;
+
+export const ALL_STATS_MODES: StatsMode[] = ["tonpu", "hanchan", "issou", "sanma_tonpu", "sanma_hanchan", "sanma_issou"];
+
+export function statsModeOf(rules: Pick<Rules, "length" | "players">): StatsMode {
+  return rules.players === 3 ? `sanma_${rules.length}` : rules.length;
+}
+
+export function isSanmaMode(mode: string): boolean {
+  return mode.startsWith("sanma_");
+}
+
+/** 表示名（例：東風戦 / 三人・東南戦） */
+export function statsModeLabel(mode: string): string {
+  const len = (isSanmaMode(mode) ? mode.slice(6) : mode) as GameLength;
+  const base = GAME_LENGTH_LABEL[len] ?? len;
+  return isSanmaMode(mode) ? `三人・${base}` : base;
+}
 
 export interface YakumanRecord {
   yaku: string;
@@ -9,7 +32,7 @@ export interface YakumanRecord {
 
 export interface PlayerStatsDoc {
   name: string;
-  mode: GameLength;
+  mode: StatsMode;
   games: number;
   rankSum: number;
   rank1: number;
@@ -46,7 +69,7 @@ export interface MatchPlayerRecord {
 
 export interface MatchDoc {
   id: string;
-  mode: GameLength;
+  mode: StatsMode;
   roomCode: string;
   startedAt: number;
   endedAt: number;
@@ -66,7 +89,7 @@ export interface KifuDoc {
   /** 対局ID（MatchDoc.id） */
   kifuOf: string;
   serial: number;
-  mode: GameLength;
+  mode: StatsMode;
   aka: boolean;
   /**
    * KifuRecord をJSON文字列にしたもの。
@@ -122,7 +145,7 @@ export const FIELD_LABELS: Record<EditableField, string> = {
   tobi: "飛び回数",
 };
 
-export function playerDocId(mode: GameLength, name: string): string {
+export function playerDocId(mode: StatsMode, name: string): string {
   return `${mode}__${encodeURIComponent(name)}`;
 }
 
@@ -130,7 +153,7 @@ export function aliasDocId(name: string): string {
   return encodeURIComponent(name);
 }
 
-export function emptyStats(name: string, mode: GameLength): PlayerStatsDoc {
+export function emptyStats(name: string, mode: StatsMode): PlayerStatsDoc {
   return {
     name,
     mode,

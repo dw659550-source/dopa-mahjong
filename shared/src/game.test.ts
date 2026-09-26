@@ -374,3 +374,92 @@ test("一荘戦は北4局まで続く（飛びがなければ）", () => {
     assert.ok(maxIdx <= 15);
   }
 });
+
+// ---------------------------------------------------------------- 三人麻雀
+
+function cpuSeats3(level: SeatInfo["cpuLevel"] = "normal"): SeatInfo[] {
+  return [0, 1, 2].map((i) => ({ name: `CPU${i}`, isCpu: true, cpuLevel: level }));
+}
+
+for (const level of ["weak", "normal", "strong"] as const) {
+  for (const length of ["tonpu", "hanchan", "issou"] as const) {
+    test(`三人麻雀: CPU 3人で最後まで対局できる (${level}, ${length})`, () => {
+      for (const seed of [1, 2]) {
+        let s = createGame(cpuSeats3(level), { ...DEFAULT_RULES, length }, seed * 131 + 7, 0);
+        assert.equal(s.kyoku!.players.length, 3);
+        let now = 0;
+        let nukiSeen = 0;
+        let maxIdx = 0;
+        for (let i = 0; i < 400000 && s.phase !== "ended"; i++) {
+          now += 300;
+          s = applyAction(s, { type: "tick" }, now).state;
+          const total = s.scores.reduce((a, b) => a + b, 0) + s.kyotaku * 1000;
+          assert.equal(total, 105000, "点数の合計が保存されていない");
+          if (s.kyoku) {
+            // 二萬〜八萬は使わない
+            for (const p of s.kyoku.players) for (const t of [...p.hand, ...p.river.map((r) => r.tile)]) assert.ok(kindOf(t) < 1 || kindOf(t) > 7);
+            nukiSeen = Math.max(nukiSeen, ...s.kyoku.players.map((p) => (p.nuki ?? []).length));
+          }
+          maxIdx = Math.max(maxIdx, s.roundWind * 3 + s.kyokuNum);
+          assert.ok(s.kyokuNum < 3);
+        }
+        assert.equal(s.phase, "ended");
+        assert.equal(s.final!.players.length, 3);
+        const pts = s.final!.players.reduce((a, b) => a + b.points, 0);
+        assert.ok(Math.abs(pts) < 0.01, `最終得点の合計が0でない: ${pts}`);
+        assert.ok(nukiSeen > 0, "北抜きが一度も起きていない");
+        const limit = { tonpu: 5, hanchan: 8, issou: 11 }[length];
+        assert.ok(maxIdx <= limit);
+      }
+    });
+  }
+}
+
+function fresh3(seed = 5): GameState {
+  const s = createGame([0, 1, 2].map((i) => ({ name: `P${i}`, isCpu: false, cpuLevel: "normal" as const })), DEFAULT_RULES, seed, 0);
+  if (s.phase !== "playing") return fresh3(seed + 1);
+  for (const p of s.kyoku!.players) p.firstTurn = false;
+  return s;
+}
+
+test("三人麻雀: 持ち点35000、チーはできない", () => {
+  const s = fresh3();
+  assert.deepEqual(s.scores, [35000, 35000, 35000]);
+  setHand(s, 1, "19m123p456p789s11z2z", "9s");
+  setHand(s, 0, "19m123p456p789s11z3z", "1s");
+  // 席0（席1の上家）が 7s を捨てても、席1はチーできない（89s を持っていても）
+  let st = applyAction(s, { type: "discard", seat: 0, tile: s.kyoku!.players[0].hand.find((t) => kindOf(t) === 26)! }, 100).state;
+  assert.ok(!callOptions(st, 1).some((o) => o.type === "chi"));
+});
+
+test("三人麻雀: 北を抜くと抜きドラになり、嶺上牌をツモる", () => {
+  let s = fresh3();
+  // 席0: 北を持っていて、抜いてから和了できる形
+  setHand(s, 0, "123p456p789s11z22z4z", "9m");
+  s.opts[0].autoHora = false;
+  const before = s.kyoku!.players[0].hand.length;
+  s = applyAction(s, { type: "nuki", seat: 0 }, 100).state;
+  const p = s.kyoku!.players[0];
+  assert.equal((p.nuki ?? []).length, 1);
+  assert.equal(p.hand.length, before); // 北を抜いて嶺上牌を1枚ツモ
+  assert.ok(p.rinshan);
+  assert.equal(s.events[s.events.length - 1].type === "nuki" || s.events.some((e) => e.type === "nuki"), true);
+});
+
+test("三人麻雀: ツモ損（子のツモは2人だけが払う）", () => {
+  let s = fresh3();
+  // 親=席0。席1が子で門前ツモ（立直なし・メンゼンツモのみ＋α）
+  s.opts[1].autoHora = false;
+  setHand(s, 1, "123p456p789s11s99m", "9m");
+  const before = s.scores.slice();
+  s = applyAction(s, { type: "tsumo", seat: 1 }, 100).state;
+  assert.equal(s.phase, "result");
+  const d = s.result!.deltas;
+  const w = s.result!.wins[0];
+  // 支払ったのは席0と席2だけで、合計が和了者の受取
+  assert.equal(d[0] + d[2] + d[1], 0);
+  assert.ok(d[0] < 0 && d[2] < 0);
+  // 四人麻雀なら子のツモは 親2倍+子1倍×2。三人は 親2倍+子1倍（ツモ損）
+  assert.equal(d[1], w.points);
+  assert.ok(before.every((x) => x === 35000));
+});
