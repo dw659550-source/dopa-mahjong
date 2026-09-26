@@ -55,20 +55,23 @@ function River({
   aka,
   highlightLast,
   size = "xs",
+  rows = 1,
 }: {
   river: RiverTile[];
   aka: boolean;
   highlightLast: "callable" | "win" | null;
   size?: "xs" | "sm";
+  rows?: number;
 }) {
   const lastIdx = river.length - 1;
+  // 1段 = 牌の高さ(24px) + 隙間(2px)
   return (
-    <div className="flex flex-wrap gap-[2px] content-start min-h-[30px]">
+    <div className="flex flex-wrap gap-[2px] content-start" style={{ minHeight: rows * 26 - 2 }}>
       {river.map((r, i) => {
         const isLast = i === lastIdx;
         const called = r.calledBy !== null;
         return (
-          <span key={i} className={isLast ? "deal-in" : undefined}>
+          <span key={i} className={isLast ? "flex deal-in" : "flex"}>
             <Tile
               tile={r.tile}
               aka={aka}
@@ -126,6 +129,7 @@ function PlayerPanel({
   highlightLast,
   banner,
   showHand,
+  riverRows,
 }: {
   state: GameState;
   seat: number;
@@ -134,6 +138,8 @@ function PlayerPanel({
   highlightLast: "callable" | "win" | null;
   banner: string | null;
   showHand: boolean;
+  /** 河のために確保しておく段数 */
+  riverRows: number;
 }) {
   const k = state.kyoku!;
   const p = k.players[seat];
@@ -142,22 +148,25 @@ function PlayerPanel({
   const aka = state.rules.aka;
   return (
     <div className={`relative rounded-xl p-2 ${me ? "bg-black/25" : "bg-black/20"} flex flex-col gap-1.5`}>
-      <div className="flex items-center gap-1.5 text-xs">
+      <div className="flex items-center gap-1.5 text-xs h-5 whitespace-nowrap overflow-hidden">
         <span
-          className={`w-5 h-5 rounded flex items-center justify-center font-black ${
+          className={`w-5 h-5 shrink-0 rounded flex items-center justify-center font-black ${
             w === 0 ? "bg-dp-bad text-white" : "bg-white/15"
           }`}
         >
           {WIND[w]}
         </span>
-        <span className="font-bold truncate max-w-[7rem]">{info.name}</span>
-        <span className="font-mono text-dp-accent">{state.scores[seat].toLocaleString()}</span>
-        {p.riichi > 0 && <span className="px-1 rounded bg-dp-accent text-black font-black">立直</span>}
-        {info.isCpu && <span className="text-dp-muted">CPU</span>}
-        {!info.isCpu && !connected && <span className="text-dp-bad font-bold">切断中</span>}
-        {!info.isCpu && connected && state.opts[seat].autoHora && <span className="text-dp-accent2">自動和了</span>}
+        <span className="font-bold truncate min-w-0 max-w-[7rem]">{info.name}</span>
+        <span className="font-mono text-dp-accent shrink-0">{state.scores[seat].toLocaleString()}</span>
+        {p.riichi > 0 && <span className="px-1 rounded bg-dp-accent text-black font-black shrink-0">立直</span>}
+        {info.isCpu && <span className="text-dp-muted shrink-0">CPU</span>}
+        {!info.isCpu && !connected && <span className="text-dp-bad font-bold shrink-0">切断中</span>}
+        {!info.isCpu && connected && state.opts[seat].autoHora && <span className="text-dp-accent2 truncate">自動和了</span>}
       </div>
-      <Melds melds={p.melds} seat={seat} aka={aka} />
+      {/* 副露・河の高さはあらかじめ確保しておく（鳴きや河の段が増えても画面がずれないように） */}
+      <div className={me ? "" : "min-h-[24px]"}>
+        <Melds melds={p.melds} seat={seat} aka={aka} />
+      </div>
       {showHand && (
         <div className="flex flex-wrap gap-[1px]">
           {sortHand(p.hand).map((t) => (
@@ -172,7 +181,7 @@ function PlayerPanel({
           ))}
         </div>
       )}
-      <River river={p.river} aka={aka} highlightLast={highlightLast} />
+      <River river={p.river} aka={aka} highlightLast={highlightLast} rows={riverRows} />
       {banner && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
           <span className="call-banner text-3xl font-black text-dp-accent drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)]">
@@ -207,11 +216,16 @@ function DiscardTimer({ state, seat }: { state: GameState; seat: number }) {
     if (secs > 3) lastBeep.current = -1;
   }, [secs, deadline, total]);
   if (deadline === null) {
-    return <div className="h-2 rounded-full bg-white/10" />;
+    // 高さはタイマー表示中と同じにする（表示の有無で画面がずれないように）
+    return (
+      <div className="h-4 flex items-center">
+        <div className="flex-1 h-2 rounded-full bg-white/10" />
+      </div>
+    );
   }
   const ratio = remain / total;
   return (
-    <div className="flex items-center gap-2">
+    <div className="h-4 flex items-center gap-2">
       <div className="flex-1 h-2 rounded-full bg-white/10 overflow-hidden">
         <div
           className={`h-full ${ratio < 0.3 ? "bg-dp-bad" : "bg-dp-accent2"}`}
@@ -435,6 +449,28 @@ export default function GameView({ state, mySeat, onAction, connected }: Props) 
   const sorted = sortHand(hand);
   const hasChi = calls.some((c) => c.type === "chi");
   const hasPon = calls.some((c) => c.type === "pon");
+  // ボタンに出す「鳴ける牌」（同じ牌種は1つにまとめる）
+  const targetsOf = (type: "chi" | "pon") => {
+    const out: TileId[] = [];
+    for (const c of calls) if (c.type === type && !out.some((t) => kindOf(t) === kindOf(c.target))) out.push(c.target);
+    return out;
+  };
+  const kanTile: TileId | null =
+    kanCount !== 1
+      ? null
+      : ankans.length
+        ? me?.hand.find((t) => kindOf(t) === ankans[0]) ?? null
+        : kakans.length
+          ? me?.hand.find((t) => kindOf(t) === kakans[0]) ?? null
+          : minkans[0]?.target ?? null;
+  const withTiles = (tiles: TileId[], label: string) => (
+    <span className="flex items-center justify-center gap-1">
+      {tiles.slice(0, 2).map((t) => (
+        <Tile key={t} tile={t} aka={aka} size="xs" />
+      ))}
+      <span>{label}</span>
+    </span>
+  );
 
   return (
     <div className="flex flex-col gap-2">
@@ -469,6 +505,7 @@ export default function GameView({ state, mySeat, onAction, connected }: Props) 
             highlightLast={highlight[order[0]]}
             banner={banners[order[0]]?.text ?? null}
             showHand={false}
+            riverRows={2}
           />
         </div>
         <PlayerPanel
@@ -479,6 +516,7 @@ export default function GameView({ state, mySeat, onAction, connected }: Props) 
           highlightLast={highlight[order[1]]}
           banner={banners[order[1]]?.text ?? null}
           showHand={false}
+          riverRows={3}
         />
         <PlayerPanel
           state={state}
@@ -488,6 +526,7 @@ export default function GameView({ state, mySeat, onAction, connected }: Props) 
           highlightLast={highlight[order[2]]}
           banner={banners[order[2]]?.text ?? null}
           showHand={false}
+          riverRows={3}
         />
         <div className="col-span-2">
           <PlayerPanel
@@ -498,6 +537,7 @@ export default function GameView({ state, mySeat, onAction, connected }: Props) 
             highlightLast={null}
             banner={banners[viewSeat]?.text ?? null}
             showHand={false}
+            riverRows={2}
           />
         </div>
       </div>
@@ -528,13 +568,13 @@ export default function GameView({ state, mySeat, onAction, connected }: Props) 
               九種九牌
             </SlotButton>
             <SlotButton show={hasPon} color="bg-dp-accent text-black" onClick={() => pressCall("pon")}>
-              ポン
+              {withTiles(targetsOf("pon"), "ポン")}
             </SlotButton>
             <SlotButton show={hasChi} color="bg-dp-accent text-black" onClick={() => pressCall("chi")}>
-              チー
+              {withTiles(targetsOf("chi"), "チー")}
             </SlotButton>
             <SlotButton show={kanCount > 0} color="bg-dp-accent text-black" onClick={pressKan}>
-              カン
+              {withTiles(kanTile !== null ? [kanTile] : [], "カン")}
             </SlotButton>
           </div>
           <p className={`text-center text-xs h-4 ${riichiMode ? "text-dp-accent2" : "text-dp-muted"}`}>
@@ -565,7 +605,9 @@ export default function GameView({ state, mySeat, onAction, connected }: Props) 
                 />
               );
             })}
-            {me.drawn !== null && (
+            {/* ツモ牌の場所は常に確保しておく（ツモの有無で手牌が左右にずれないように） */}
+            <span className="w-2 shrink-0" />
+            {me.drawn !== null ? (
               <span className="deal-in" key={`d${me.drawn}`}>
                 <Tile
                   tile={me.drawn}
@@ -576,6 +618,8 @@ export default function GameView({ state, mySeat, onAction, connected }: Props) 
                   highlight={riichiMode && riichiOk.includes(me.drawn) ? "selected" : "drawn"}
                 />
               </span>
+            ) : (
+              <span className="tile tile-md invisible" aria-hidden />
             )}
           </div>
           <div className="flex justify-end">

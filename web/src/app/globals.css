@@ -204,7 +204,7 @@ body {
   box-shadow: 0 0 0 3px #3fc1a5, 0 3px 4px rgba(0, 0, 0, 0.35);
 }
 .tile-hl-drawn {
-  margin-left: 8px;
+  /* ツモ牌の前の隙間は手牌側で確保する（ツモの有無で手牌がずれないように） */
 }
 .tile-hl-dim {
   opacity: 0.45;
@@ -214,6 +214,8 @@ body {
 }
 
 .deal-in {
+  /* 行の高さ（文字用の余白）が入って段の高さが変わらないよう、中の牌だけの大きさにする */
+  display: inline-flex;
   animation: dealIn 0.18s ease-out both;
 }
 @keyframes dealIn {

@@ -161,6 +161,60 @@ function RoomPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [room?.gameSeats, presence, clock]);
 
+  // 通信の失敗が続いているか（続いている間は画面上部に知らせる）
+  const [netFailSince, setNetFailSince] = useState<number | null>(null);
+  const markNet = useCallback((ok: boolean) => {
+    setNetFailSince((cur) => (ok ? null : cur ?? Date.now()));
+  }, []);
+  // 送信中の書き込み（サーバーが応答しないと失敗にならず待ち続けるため、時間で判定する）
+  const sendingStarts = useRef<Set<number>>(new Set());
+  const track = useCallback(async <T,>(p: Promise<T>): Promise<T> => {
+    const t = Date.now() + Math.random();
+    sendingStarts.current.add(t);
+    try {
+      return await p;
+    } finally {
+      sendingStarts.current.delete(t);
+    }
+  }, []);
+  const oldestSending = () => (sendingStarts.current.size ? Math.floor(Math.min(...sendingStarts.current)) : null);
+  const [nowTick, setNowTick] = useState(0);
+  useEffect(() => {
+    const iv = setInterval(() => setNowTick(Date.now()), 1000);
+    return () => clearInterval(iv);
+  }, []);
+
+  // 待機中に全員が揃った・対局が始まったことを、別のタブを見ていても気づけるように知らせる
+  const filledCount = room ? room.seats.filter((x) => x !== null).length : 0;
+  const prevRoomInfo = useRef<{ status?: string; filled: number }>({ filled: 0 });
+  useEffect(() => {
+    if (!room || !isParticipant) {
+      prevRoomInfo.current = { status: room?.status, filled: filledCount };
+      return;
+    }
+    const prev = prevRoomInfo.current;
+    const started = prev.status === "waiting" && room.status === "playing";
+    const filled = room.status === "waiting" && prev.filled > 0 && prev.filled < 4 && filledCount === 4;
+    prevRoomInfo.current = { status: room.status, filled: filledCount };
+    if (!started && !filled) return;
+    const text = started ? "【対局開始】" : "【4人揃いました】";
+    if (filled) SE.chance();
+    if (typeof document === "undefined" || document.visibilityState === "visible") return;
+    const original = document.title;
+    let on = false;
+    const iv = setInterval(() => {
+      on = !on;
+      document.title = on ? text : original;
+    }, 1000);
+    const stop = () => {
+      if (document.visibilityState !== "visible") return;
+      clearInterval(iv);
+      document.title = original;
+      document.removeEventListener("visibilitychange", stop);
+    };
+    document.addEventListener("visibilitychange", stop);
+  }, [room, filledCount, isParticipant]);
+
   // 同じ端末から送る書き込み同士がぶつかると、Firestoreがやり直し（待ち時間つき）をするため、
   // 自分の操作を送っている間は進行役の送信を止め、進行役の送信中に操作したときはその完了を待ってから送る。
   const inflight = useRef(false);
@@ -185,7 +239,8 @@ function RoomPage() {
       userBusy.current++;
       try {
         if (driverSending.current) await driverSending.current.catch(() => undefined);
-        const res = await sendGameAction(code, a);
+        const res = await track(sendGameAction(code, a));
+        markNet(true);
         if (res.error && a.type !== "tick" && a.type !== "connected") {
           failed = true;
           // 局が終わった直後に届いた操作は、知らせる必要がないので黙って捨てる
@@ -197,6 +252,7 @@ function RoomPage() {
         }
       } catch (e) {
         failed = true;
+        markNet(false);
         if (a.type !== "tick") {
           setToast(e instanceof Error ? e.message : "通信エラー");
           setTimeout(() => setToast(null), 1800);
@@ -210,7 +266,7 @@ function RoomPage() {
         else setTimeout(() => pendingKey.current === key && setPending(null), 5000);
       }
     },
-    [code, serverState],
+    [code, serverState, markNet, track],
   );
 
   // 進行役：時間切れの自動ツモ切り・CPUの操作・次局への移行を行う。
@@ -249,19 +305,21 @@ function RoomPage() {
       if (!action) return;
       inflight.current = true;
       if (action.type === "tick") lastDriverTickAt.current = Date.now();
-      const p = sendGameAction(code, action);
+      const p = track(sendGameAction(code, action));
       driverSending.current = p;
       try {
         await p;
+        markNet(true);
       } catch {
         // 次の周期で再試行
+        markNet(false);
       } finally {
         inflight.current = false;
         if (driverSending.current === p) driverSending.current = null;
       }
     }, 200);
     return () => clearInterval(iv);
-  }, [mySeat, code]);
+  }, [mySeat, code, markNet, track]);
 
   const onAction = useCallback((a: Action) => void send(a, { optimistic: a.type === "discard" }), [send]);
 
@@ -373,11 +431,59 @@ function RoomPage() {
       {state.phase === "result" && state.result && (
         <ResultView state={state} mySeat={mySeat} onAck={() => mySeat !== null && void send({ type: "ack", seat: mySeat })} />
       )}
+      <NetBanner
+        failSince={minOrNull(netFailSince, oldestSending())}
+        stalledSince={stalledSince(serverState, room)}
+        now={nowTick}
+      />
       {toast && (
         <div className="fixed top-3 left-1/2 -translate-x-1/2 z-50 rounded-xl bg-dp-bad text-white px-4 py-2 text-sm font-bold shadow-lg">
           {toast}
         </div>
       )}
     </main>
+  );
+}
+
+/** 対局の進行が予定より大きく遅れている場合、その予定時刻（遅れていなければ null） */
+function stalledSince(st: GameState | null, room: RoomDoc): number | null {
+  if (!st || room.status !== "playing" || st.phase === "ended") return null;
+  const due = nextDueAt(st);
+  if (due === null) return null;
+  return serverNow() - due > STALL_MS ? due : null;
+}
+
+function minOrNull(a: number | null, b: number | null): number | null {
+  if (a === null) return b;
+  if (b === null) return a;
+  return Math.min(a, b);
+}
+
+/** 進行が止まったとみなすまでの時間 */
+const STALL_MS = 8000;
+/** 再読み込みボタンを出すまでの時間 */
+const RELOAD_HINT_MS = 15000;
+
+function NetBanner({ failSince, stalledSince, now }: { failSince: number | null; stalledSince: number | null; now: number }) {
+  void now; // 1秒ごとに再描画するため
+  const failFor = failSince === null ? 0 : Date.now() - failSince;
+  const stallFor = stalledSince === null ? 0 : serverNow() - stalledSince;
+  const trouble = failFor > 4000 || stallFor > 0;
+  if (!trouble) return null;
+  const longTrouble = failFor > RELOAD_HINT_MS || stallFor > RELOAD_HINT_MS;
+  return (
+    <div
+      role="status"
+      className="fixed top-2 left-1/2 -translate-x-1/2 z-50 w-[calc(100%-24px)] max-w-md rounded-xl bg-dp-panel2 border border-dp-bad/70 px-3 py-2 text-sm shadow-lg flex items-center gap-2"
+    >
+      <span className="flex-1">
+        {failFor > 4000 ? "通信が不安定です。自動で再接続しています…" : "対局の進行が止まっています。通信を確認しています…"}
+      </span>
+      {longTrouble && (
+        <button className="btn-primary px-3 py-1 text-xs" onClick={() => location.reload()}>
+          再読み込み
+        </button>
+      )}
+    </div>
   );
 }
