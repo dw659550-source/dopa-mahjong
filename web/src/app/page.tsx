@@ -117,6 +117,18 @@ export default function LobbyPage() {
         </div>
       )}
 
+      <nav className="flex justify-end gap-2 -mb-2">
+        <Link
+          href={normalizeName(name) ? `/player?name=${encodeURIComponent(normalizeName(name))}` : "/player"}
+          className="rounded-full border border-dp-accent/60 px-3 py-1 text-xs font-bold text-dp-accent"
+        >
+          マイページ
+        </Link>
+        <Link href="/ranking" className="rounded-full border border-dp-accent/60 px-3 py-1 text-xs font-bold text-dp-accent">
+          ランキング
+        </Link>
+      </nav>
+
       <header className="text-center pt-2">
         <h1 className="text-4xl font-black tracking-wider">
           <span className="text-dp-accent">ドパ</span>麻雀
@@ -284,7 +296,7 @@ export default function LobbyPage() {
 
       <section className="card p-4 flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-black">自分の戦績</h2>
+          <h2 className="text-lg font-black">マイページ</h2>
           <p className="text-xs text-dp-muted">成績・対局履歴・牌譜（各局の終わった時点の盤面）</p>
         </div>
         <Link href={normalizeName(name) ? `/player?name=${encodeURIComponent(normalizeName(name))}` : "/player"} className="btn-secondary">
