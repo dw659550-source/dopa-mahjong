@@ -14,6 +14,8 @@ import {
   HEARTBEAT_MS,
   STALE_MS,
   returnToRoom,
+  activeSeats,
+  playersOf,
   heartbeat,
   joinRoom,
   parseState,
@@ -150,8 +152,7 @@ function RoomPage() {
   const connected = useMemo(() => {
     const now = serverNow();
     const gs = room?.gameSeats ?? [];
-    return [0, 1, 2, 3].map((i) => {
-      const s = gs[i];
+    return gs.map((s) => {
       if (!s) return false;
       if (s.isCpu) return true;
       const p = s.playerId ? presence[s.playerId] : undefined;
@@ -185,7 +186,7 @@ function RoomPage() {
   }, []);
 
   // 待機中に全員が揃った・対局が始まったことを、別のタブを見ていても気づけるように知らせる
-  const filledCount = room ? room.seats.filter((x) => x !== null).length : 0;
+  const filledCount = room ? activeSeats(room).filter((x) => x !== null).length : 0;
   const prevRoomInfo = useRef<{ status?: string; filled: number }>({ filled: 0 });
   useEffect(() => {
     if (!room || !isParticipant) {
@@ -194,10 +195,11 @@ function RoomPage() {
     }
     const prev = prevRoomInfo.current;
     const started = prev.status === "waiting" && room.status === "playing";
-    const filled = room.status === "waiting" && prev.filled > 0 && prev.filled < 4 && filledCount === 4;
+    const cap = playersOf(room.rules);
+    const filled = room.status === "waiting" && prev.filled > 0 && prev.filled < cap && filledCount === cap;
     prevRoomInfo.current = { status: room.status, filled: filledCount };
     if (!started && !filled) return;
-    const text = started ? "【対局開始】" : "【4人揃いました】";
+    const text = started ? "【対局開始】" : `【${cap}人揃いました】`;
     if (filled) SE.chance();
     if (typeof document === "undefined" || document.visibilityState === "visible") return;
     const original = document.title;
@@ -283,7 +285,7 @@ function RoomPage() {
       const { state: st, connected: conn, room: rm } = latest.current;
       if (!st || !rm || rm.status !== "playing" || inflight.current || userBusy.current > 0) return;
       const now = serverNow();
-      const humans = [0, 1, 2, 3].filter((i) => !st.seats[i].isCpu);
+      const humans = st.seats.map((_, i) => i).filter((i) => !st.seats[i].isCpu);
       const onlineHumans = humans.filter((i) => conn[i] || i === mySeat);
       const driver = onlineHumans.length ? Math.min(...onlineHumans) : mySeat;
       const amDriver = driver === mySeat;

@@ -4,7 +4,7 @@ import {
   EAST,
   HAKU,
   HATSU,
-  doraFromIndicator,
+  doraFromIndicatorFor,
   isDragon,
   isHonor,
   isRed,
@@ -63,6 +63,10 @@ export interface WinInput {
   uraIndicators: Tile[];
   aka: boolean;
   kuitan: boolean;
+  /** 三人麻雀（ドラ表示の一萬→九萬） */
+  sanma?: boolean;
+  /** 抜いた北（抜きドラ。ドラ・裏ドラの数え上げにも含める） */
+  nuki?: Tile[];
 }
 
 export interface YakuItem {
@@ -103,22 +107,25 @@ function basePointsFor(han: number, fu: number): { base: number; label: string }
   return { base: b, label: "" };
 }
 
-function countDora(input: WinInput, allTiles: Tile[]): { dora: number; ura: number; aka: number } {
+function countDora(input: WinInput, handTiles: Tile[]): { dora: number; ura: number; aka: number; nuki: number } {
+  const nukiTiles = input.nuki ?? [];
+  const allTiles = [...handTiles, ...nukiTiles];
   const kinds = allTiles.map(kindOf);
+  const sanma = !!input.sanma;
   let dora = 0;
   for (const ind of input.doraIndicators) {
-    const d = doraFromIndicator(kindOf(ind));
+    const d = doraFromIndicatorFor(kindOf(ind), sanma);
     dora += kinds.filter((k) => k === d).length;
   }
   let ura = 0;
   if (input.riichi > 0) {
     for (const ind of input.uraIndicators) {
-      const d = doraFromIndicator(kindOf(ind));
+      const d = doraFromIndicatorFor(kindOf(ind), sanma);
       ura += kinds.filter((k) => k === d).length;
     }
   }
   const aka = allTiles.filter((t) => isRed(t, input.aka)).length;
-  return { dora, ura, aka };
+  return { dora, ura, aka, nuki: nukiTiles.length };
 }
 
 function groupKinds(g: Group): Kind[] {
@@ -437,7 +444,7 @@ export function evaluateWin(input: WinInput): WinResult | null {
     }
   }
 
-  const { dora, ura, aka } = countDora(input, allTiles);
+  const { dora, ura, aka, nuki } = countDora(input, allTiles);
   let best: WinResult | null = null;
   for (const c of candidates) {
     if (c.yakuHan < 1) continue;
@@ -445,7 +452,8 @@ export function evaluateWin(input: WinInput): WinResult | null {
     if (dora > 0) yaku.push({ name: "ドラ", han: dora });
     if (aka > 0) yaku.push({ name: "赤ドラ", han: aka });
     if (ura > 0) yaku.push({ name: "裏ドラ", han: ura });
-    const han = c.yakuHan + dora + aka + ura;
+    if (nuki > 0) yaku.push({ name: "抜きドラ", han: nuki });
+    const han = c.yakuHan + dora + aka + ura + nuki;
     const { base, label } = basePointsFor(han, c.fu);
     const r: WinResult = { yaku, han, fu: c.fu, yakumanMult: 0, basePoints: base, label, yakuHan: c.yakuHan };
     if (

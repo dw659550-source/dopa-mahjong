@@ -33,6 +33,7 @@ import {
   kifuDocId,
   parseKifu,
   playerDocId,
+  statsModeOf,
   type KifuDoc,
   type KifuView,
   type MatchDoc,
@@ -197,6 +198,15 @@ export function subscribeWaitingRooms(cb: (rooms: RoomDoc[]) => void) {
   });
 }
 
+/** ルールの人数（三人麻雀は3）。待機室の席は常に4つ持ち、三人麻雀では4つ目を使わない */
+export function playersOf(rules: Rules): 3 | 4 {
+  return rules.players === 3 ? 3 : 4;
+}
+
+export function activeSeats(room: RoomDoc): (SeatDoc | null)[] {
+  return room.seats.slice(0, playersOf(room.rules));
+}
+
 function summarize(state: GameState): RoomSummary {
   return {
     label: state.phase === "ended" ? "終了" : roundLabel(state),
@@ -260,8 +270,8 @@ export async function createRoom(
         abortedReason: null,
       };
       if (isCpuGame) {
-        room.seats = [me, cpuSeat(rules.cpuLevel, 1), cpuSeat(rules.cpuLevel, 2), cpuSeat(rules.cpuLevel, 3)];
-        const { gameSeats, state } = newGameFromSeats(room.seats as SeatDoc[], rules, now);
+        room.seats = [me, cpuSeat(rules.cpuLevel, 1), cpuSeat(rules.cpuLevel, 2), playersOf(rules) === 4 ? cpuSeat(rules.cpuLevel, 3) : null];
+        const { gameSeats, state } = newGameFromSeats(activeSeats(room) as SeatDoc[], rules, now);
         room.status = "playing";
         room.gameSeats = gameSeats;
         room.stateJson = JSON.stringify(state);
@@ -298,7 +308,7 @@ export async function joinRoom(code: string, playerId: string, name: string): Pr
         tx.update(roomRef(code), { seats: room.seats, updatedAt: serverNow() });
         return { ok: true };
       }
-      const empty = room.seats.findIndex((s) => s === null);
+      const empty = activeSeats(room).findIndex((s) => s === null);
       if (empty < 0) return { ok: true, spectator: true };
       room.seats[empty] = { playerId, name, isCpu: false, cpuLevel: room.rules.cpuLevel };
       tx.update(roomRef(code), { seats: room.seats, updatedAt: serverNow() });
@@ -356,6 +366,7 @@ export async function setSeatCpu(code: string, playerId: string, seatIndex: numb
   return hostTx(code, playerId, (room) => {
     const cur = room.seats[seatIndex];
     if (cur && !cur.isCpu) return "その席には人が座っています";
+    if (seatIndex >= playersOf(room.rules)) return "三人麻雀ではこの席は使いません";
     room.seats[seatIndex] = level ? cpuSeat(level, seatIndex) : null;
     return { seats: room.seats };
   });
@@ -363,13 +374,24 @@ export async function setSeatCpu(code: string, playerId: string, seatIndex: numb
 
 export async function fillCpu(code: string, playerId: string, level: CpuLevel) {
   return hostTx(code, playerId, (room) => {
-    room.seats = room.seats.map((s, i) => s ?? cpuSeat(level, i));
+    const n = playersOf(room.rules);
+    room.seats = room.seats.map((s, i) => (i < n ? s ?? cpuSeat(level, i) : s));
     return { seats: room.seats };
   });
 }
 
 export async function updateRules(code: string, playerId: string, rules: Rules) {
-  return hostTx(code, playerId, () => ({ rules }));
+  return hostTx(code, playerId, (room) => {
+    if (playersOf(rules) === 3 && playersOf(room.rules) === 4) {
+      // 三人麻雀に切り替えるときは4つ目の席を空ける（人が座っていたら切り替えられない）
+      const fourth = room.seats[3];
+      if (fourth && !fourth.isCpu) return "4つ目の席に人が座っているため、三人麻雀にできません";
+      const seats = room.seats.slice();
+      seats[3] = null;
+      return { rules, seats };
+    }
+    return { rules };
+  });
 }
 
 /** 終局後、同じメンバーのまま待機室に戻す（参加者なら誰でも実行できる） */
@@ -410,11 +432,14 @@ export async function returnToRoom(code: string, playerId: string): Promise<stri
 
 export async function startGame(code: string, playerId: string) {
   return hostTx(code, playerId, (room) => {
-    if (room.seats.some((s) => s === null)) return "4人そろっていません（空席はCPUで補充できます）";
-    const names = room.seats.filter((s) => s && !s.isCpu).map((s) => s!.name);
+    const n = playersOf(room.rules);
+    const seats = activeSeats(room);
+    if (seats.some((s) => s === null)) return `${n}人そろっていません（空席はCPUで補充できます）`;
+    if (n === 3 && room.seats[3] && !room.seats[3].isCpu) return "4つ目の席に人が座っています";
+    const names = seats.filter((s) => s && !s.isCpu).map((s) => s!.name);
     if (new Set(names).size !== names.length) return "同じ名前のプレイヤーがいます";
     const now = serverNow();
-    const { gameSeats, state } = newGameFromSeats(room.seats as SeatDoc[], room.rules, now);
+    const { gameSeats, state } = newGameFromSeats(seats as SeatDoc[], room.rules, now);
     return {
       status: "playing",
       gameSeats,
@@ -482,7 +507,7 @@ export async function sendGameAction(code: string, action: Action): Promise<Acti
           kind: "kifu",
           kifuOf: matchId,
           serial: kifu.serial,
-          mode: state.rules.length,
+          mode: statsModeOf(state.rules),
           aka: state.rules.aka,
           json: kifuJson,
         };
@@ -520,7 +545,7 @@ async function resolveAlias(tx: Transaction, name: string): Promise<string> {
 }
 
 async function prepareRecord(tx: Transaction, room: RoomDoc, state: GameState): Promise<RecordPlan> {
-  const mode = state.rules.length;
+  const mode = statsModeOf(state.rules);
   const final = state.final!;
   const matchId = `${room.code}-${state.startedAt}`;
   const players: MatchPlayerRecord[] = [];

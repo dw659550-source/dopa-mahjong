@@ -7,6 +7,7 @@ import {
   ankanOptions,
   callOptions,
   canKyuushu,
+  canNuki,
   dealerSeat,
   discardDeadline,
   doraIndicatorsShown,
@@ -63,7 +64,8 @@ function sortHand(tiles: TileId[]): TileId[] {
 }
 
 function seatWindIndex(state: GameState, seat: number): number {
-  return (seat - dealerSeat(state) + 4) % 4;
+  const n = state.seats.length;
+  return (seat - dealerSeat(state) + n) % n;
 }
 
 // ------------------------------------------------------------ 河・副露
@@ -104,7 +106,20 @@ function River({
   );
 }
 
-export function Melds({ melds, seat, aka, size = "xs" }: { melds: Meld[]; seat: number; aka: boolean; size?: "2xs" | "xs" | "sm" }) {
+export function Melds({
+  melds,
+  seat,
+  aka,
+  size = "xs",
+  n = 4,
+}: {
+  melds: Meld[];
+  seat: number;
+  aka: boolean;
+  size?: "2xs" | "xs" | "sm";
+  /** 人数（三人麻雀は3）。鳴いた相手の向きの計算に使う */
+  n?: number;
+}) {
   if (melds.length === 0) return null;
   return (
     <div className="flex flex-wrap gap-2 justify-end">
@@ -120,9 +135,9 @@ export function Melds({ melds, seat, aka, size = "xs" }: { melds: Meld[]; seat: 
           );
         }
         // 鳴いた牌を横向きに（上家=左、対面=中、下家=右）
-        const rel = m.from === null ? 0 : (m.from - seat + 4) % 4;
+        const rel = m.from === null ? 0 : (m.from - seat + n) % n;
         const others = m.tiles.filter((t) => t !== m.calledTile);
-        const sideIdx = rel === 3 ? 0 : rel === 2 ? 1 : others.length;
+        const sideIdx = rel === n - 1 ? 0 : n === 4 && rel === 2 ? 1 : others.length;
         const row: { t: TileId; side: boolean }[] = others.map((t) => ({ t, side: false }));
         row.splice(sideIdx, 0, { t: m.calledTile!, side: true });
         return (
@@ -134,6 +149,18 @@ export function Melds({ melds, seat, aka, size = "xs" }: { melds: Meld[]; seat: 
         );
       })}
     </div>
+  );
+}
+
+/** 三人麻雀で抜いた北 */
+export function NukiTiles({ tiles, aka, size }: { tiles: TileId[]; aka: boolean; size: "2xs" | "xs" | "sm" }) {
+  if (tiles.length === 0) return null;
+  return (
+    <span className="flex gap-[1px] items-end" title={`抜きドラ ${tiles.length}`}>
+      {tiles.map((t) => (
+        <Tile key={t} tile={t} aka={aka} size={size} />
+      ))}
+    </span>
   );
 }
 
@@ -181,9 +208,10 @@ function PlayerPanel({
         {!info.isCpu && connected && state.opts[seat].autoHora && <span className="text-dp-accent2 truncate">自動和了</span>}
         </div>
         {/* 副露は名前の行の右端に小さく表示（行を増やさないため） */}
-        {!me && p.melds.length > 0 && (
-          <span className="ml-auto shrink-0">
-            <Melds melds={p.melds} seat={seat} aka={aka} size="2xs" />
+        {!me && (p.melds.length > 0 || (p.nuki ?? []).length > 0) && (
+          <span className="ml-auto shrink-0 flex items-center gap-1.5">
+            <NukiTiles tiles={p.nuki ?? []} aka={aka} size="2xs" />
+            <Melds melds={p.melds} seat={seat} aka={aka} size="2xs" n={state.seats.length} />
           </span>
         )}
       </div>
@@ -313,7 +341,7 @@ export default function GameView({ state, mySeat, onAction, connected }: Props) 
   const kyuushu = playing && mySeat !== null && canKyuushu(state, mySeat);
 
   // 鳴ける・ロンできる捨て牌の強調（席ごと）
-  const highlight: ("callable" | "win" | null)[] = [0, 1, 2, 3].map((seat) => {
+  const highlight: ("callable" | "win" | null)[] = state.seats.map((_, seat) => {
     if (rons.some((r) => r.from === seat && r.type === "discard")) return "win";
     if (calls.some((c) => c.from === seat)) return "callable";
     return null;
@@ -371,6 +399,9 @@ export default function GameView({ state, mySeat, onAction, connected }: Props) 
         case "kan":
           SE.kan();
           break;
+        case "nuki":
+          SE.chi();
+          break;
         case "ron":
         case "tsumo":
           // 役満は特別な音（同じ和了で音が重ならないよう1回だけ）
@@ -398,6 +429,7 @@ export default function GameView({ state, mySeat, onAction, connected }: Props) 
         chi: "チー",
         pon: "ポン",
         kan: "カン",
+        nuki: "北",
         ron: "ロン",
         tsumo: "ツモ",
       };
@@ -507,7 +539,12 @@ export default function GameView({ state, mySeat, onAction, connected }: Props) 
     setChooser({ kind: "kan", ankan: ankans, kakan: kakans, minkan: minkans });
   };
 
-  const order = [(viewSeat + 2) % 4, (viewSeat + 3) % 4, (viewSeat + 1) % 4];
+  const nPlayers = state.seats.length;
+  const sanma = nPlayers === 3;
+  // 他家の並び。四人麻雀：[対面, 上家, 下家]。三人麻雀：[上家, 下家]
+  const order = sanma ? [(viewSeat + 2) % 3, (viewSeat + 1) % 3] : [(viewSeat + 2) % 4, (viewSeat + 3) % 4, (viewSeat + 1) % 4];
+  const nukiOk = playing && mySeat !== null && canNuki(state, mySeat);
+  const northTile: TileId | null = me?.hand.find((t) => kindOf(t) === 30) ?? null;
   const hand = me ? me.hand.filter((t) => t !== me.drawn) : [];
   const sorted = sortHand(hand);
   const hasChi = calls.some((c) => c.type === "chi");
@@ -559,35 +596,31 @@ export default function GameView({ state, mySeat, onAction, connected }: Props) 
 
       {/* 他家 */}
       <div className="felt rounded-2xl p-2 grid grid-cols-2 gap-2">
-        <div className="col-span-2">
+        {!sanma && (
+          <div className="col-span-2">
+            <PlayerPanel
+              state={state}
+              seat={order[0]}
+              me={false}
+              connected={connected[order[0]]}
+              highlightLast={highlight[order[0]]}
+              banner={banners[order[0]]?.text ?? null}
+              riverRows={2}
+            />
+          </div>
+        )}
+        {(sanma ? order : order.slice(1)).map((seat) => (
           <PlayerPanel
+            key={seat}
             state={state}
-            seat={order[0]}
+            seat={seat}
             me={false}
-            connected={connected[order[0]]}
-            highlightLast={highlight[order[0]]}
-            banner={banners[order[0]]?.text ?? null}
-            riverRows={2}
+            connected={connected[seat]}
+            highlightLast={highlight[seat]}
+            banner={banners[seat]?.text ?? null}
+            riverRows={3}
           />
-        </div>
-        <PlayerPanel
-          state={state}
-          seat={order[1]}
-          me={false}
-          connected={connected[order[1]]}
-          highlightLast={highlight[order[1]]}
-          banner={banners[order[1]]?.text ?? null}
-          riverRows={3}
-        />
-        <PlayerPanel
-          state={state}
-          seat={order[2]}
-          me={false}
-          connected={connected[order[2]]}
-          highlightLast={highlight[order[2]]}
-          banner={banners[order[2]]?.text ?? null}
-          riverRows={3}
-        />
+        ))}
         <div className="col-span-2">
           <PlayerPanel
             state={state}
@@ -644,9 +677,16 @@ export default function GameView({ state, mySeat, onAction, connected }: Props) 
             <SlotButton show={hasPon} color="bg-dp-accent text-black" onClick={() => pressCall("pon")}>
               {withTiles(targetsOf("pon"), "ポン")}
             </SlotButton>
-            <SlotButton show={hasChi} color="bg-dp-accent text-black" onClick={() => pressCall("chi")}>
-              {withTiles(targetsOf("chi"), "チー")}
-            </SlotButton>
+            {sanma ? (
+              // 三人麻雀はチーがないので、その場所に北抜き
+              <SlotButton show={nukiOk} color="bg-dp-accent text-black" onClick={() => act({ type: "nuki", seat: mySeat })}>
+                {withTiles(northTile !== null ? [northTile] : [], "抜き")}
+              </SlotButton>
+            ) : (
+              <SlotButton show={hasChi} color="bg-dp-accent text-black" onClick={() => pressCall("chi")}>
+                {withTiles(targetsOf("chi"), "チー")}
+              </SlotButton>
+            )}
             <SlotButton show={kanCount > 0} color="bg-dp-accent text-black" onClick={pressKan}>
               {withTiles(kanTile !== null ? [kanTile] : [], "カン")}
             </SlotButton>
@@ -684,8 +724,9 @@ export default function GameView({ state, mySeat, onAction, connected }: Props) 
               <span className="tile tile-md invisible" aria-hidden />
             )}
           </div>
-          <div className="flex justify-end">
-            <Melds melds={me.melds} seat={mySeat} aka={aka} size="sm" />
+          <div className="flex justify-end items-end gap-2">
+            <NukiTiles tiles={me.nuki ?? []} aka={aka} size="sm" />
+            <Melds melds={me.melds} seat={mySeat} aka={aka} size="sm" n={state.seats.length} />
           </div>
 
           {/* 補助ボタン */}
@@ -736,7 +777,7 @@ export default function GameView({ state, mySeat, onAction, connected }: Props) 
                     doRon(r);
                   }}
                 >
-                  {state.seats[r.from].name} の{r.type === "kakan" ? "加槓牌" : "捨て牌"}でロン
+                  {state.seats[r.from].name} の{r.type === "kakan" ? "加槓牌" : r.type === "nuki" ? "抜いた北" : "捨て牌"}でロン
                 </button>
               ))}
             {chooser.kind === "call" &&

@@ -8,7 +8,7 @@ import { fillCpu, leaveWaitingRoom, setSeatCpu, startGame, updateRules, type Pre
 import { serverNow } from "@/lib/clock";
 import { SE } from "@/lib/sounds";
 import { fmtPoints } from "@/lib/statsModel";
-import { STALE_MS } from "@/lib/rooms";
+import { STALE_MS, activeSeats, playersOf } from "@/lib/rooms";
 
 export default function WaitingRoom({
   room,
@@ -45,7 +45,8 @@ export default function WaitingRoom({
   }
 
   const now = serverNow();
-  const filled = room.seats.every((s) => s !== null);
+  const seats = activeSeats(room);
+  const filled = seats.every((s) => s !== null);
 
   return (
     <div className="flex flex-col gap-3">
@@ -82,8 +83,8 @@ export default function WaitingRoom({
       )}
 
       <div className="card p-4 flex flex-col gap-2">
-        <h2 className="font-black">席</h2>
-        {room.seats.map((s, i) => {
+        <h2 className="font-black">席{playersOf(room.rules) === 3 && <span className="ml-2 text-xs text-dp-accent">三人麻雀</span>}</h2>
+        {seats.map((s, i) => {
           const online = s && !s.isCpu && s.playerId ? now - (presence[s.playerId]?.lastSeenAt ?? 0) < STALE_MS : false;
           return (
             <div key={i} className="flex items-center gap-2 rounded-xl bg-dp-panel2 px-3 py-2">

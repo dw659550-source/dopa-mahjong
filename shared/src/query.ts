@@ -1,6 +1,6 @@
 // 対局状態を読み取るだけの関数群（UI・CPU・エンジンで共有）
 import { waitingKinds, shanten } from "./shanten.ts";
-import { EAST, YAOCHU_KINDS, kindOf, numberOf, suitOf, toCounts, type Kind, type Tile } from "./tiles.ts";
+import { EAST, NORTH, YAOCHU_KINDS, kindOf, numberOf, suitOf, toCounts, type Kind, type Tile } from "./tiles.ts";
 import { evaluateWin, meldIsOpen, type WinResult } from "./yaku.ts";
 import type { GameState, PlayerState, RonTarget } from "./types.ts";
 
@@ -8,16 +8,26 @@ export function dealerSeat(state: GameState): number {
   return state.kyokuNum;
 }
 
+/** 人数（三人麻雀は3） */
+export function playerCount(state: GameState): number {
+  return state.seats.length;
+}
+
+export function isSanma(state: GameState): boolean {
+  return state.seats.length === 3;
+}
+
 export function seatWindKind(state: GameState, seat: number): Kind {
-  return EAST + ((seat - dealerSeat(state) + 4) % 4);
+  const n = playerCount(state);
+  return EAST + ((seat - dealerSeat(state) + n) % n);
 }
 
 export function roundWindKind(state: GameState): Kind {
   return EAST + state.roundWind;
 }
 
-export function kamicha(seat: number): number {
-  return (seat + 3) % 4;
+export function kamicha(seat: number, n = 4): number {
+  return (seat + n - 1) % n;
 }
 
 export function roundLabel(state: GameState): string {
@@ -97,6 +107,8 @@ function evalHand(state: GameState, seat: number, hand: Tile[], winTile: Tile, f
     uraIndicators: k.uraIndicators.slice(0, k.doraRevealed),
     aka: state.rules.aka,
     kuitan: state.rules.kuitan,
+    sanma: isSanma(state),
+    nuki: p.nuki ?? [],
   });
 }
 
@@ -115,6 +127,11 @@ export function ronTargetTile(state: GameState, target: RonTarget): { tile: Tile
   if (target.type === "kakan") {
     if (f.kakanTile === null) return null;
     return { tile: f.kakanTile, houtei: false, chankan: true };
+  }
+  if (target.type === "nuki") {
+    // 抜いた北へのロン（天鳳と同じく役満以外でも和了可。槍槓は付かない）
+    if (f.nukiTile === null || f.nukiTile === undefined) return null;
+    return { tile: f.nukiTile, houtei: false, chankan: false };
   }
   const idx = f.river.length - 1;
   if (target.index !== idx || idx < 0) return null;
@@ -142,11 +159,15 @@ export function ronOptions(state: GameState, seat: number): RonTarget[] {
   const k = state.kyoku;
   if (!k || state.phase !== "playing") return [];
   const out: RonTarget[] = [];
-  for (let f = 0; f < 4; f++) {
+  for (let f = 0; f < playerCount(state); f++) {
     if (f === seat) continue;
     const fp = k.players[f];
     if (fp.kakanTile !== null) {
       const t: RonTarget = { type: "kakan", from: f };
+      if (evalRon(state, seat, t)) out.push(t);
+    }
+    if (fp.nukiTile !== null && fp.nukiTile !== undefined) {
+      const t: RonTarget = { type: "nuki", from: f };
       if (evalRon(state, seat, t)) out.push(t);
     }
     const idx = fp.river.length - 1;
@@ -207,7 +228,8 @@ export function callOptions(state: GameState, seat: number): CallOption[] {
   const p = k.players[seat];
   const hand = removeTiles(p.hand, [p.drawn!]);
   const out: CallOption[] = [];
-  for (let from = 0; from < 4; from++) {
+  const n = playerCount(state);
+  for (let from = 0; from < n; from++) {
     if (from === seat) continue;
     const c = callableDiscard(state, from);
     if (!c) continue;
@@ -226,7 +248,8 @@ export function callOptions(state: GameState, seat: number): CallOption[] {
     if (same.length >= 3 && k.kanCount < 4) {
       out.push({ type: "minkan", from, index: c.index, tiles: same.slice(0, 3), target: c.tile });
     }
-    if (from === kamicha(seat) && tk < 27) {
+    // 三人麻雀はチーなし
+    if (n === 4 && from === kamicha(seat, n) && tk < 27) {
       const n = numberOf(tk);
       const patterns: [number, number][] = [];
       if (n >= 3) patterns.push([tk - 2, tk - 1]);
@@ -301,6 +324,16 @@ export function ankanOptions(state: GameState, seat: number): Kind[] {
   return out;
 }
 
+/** 三人麻雀の北抜きができるか（ポンの直後は不可。立直中はツモった北のみ） */
+export function canNuki(state: GameState, seat: number): boolean {
+  const k = state.kyoku;
+  if (!k || state.phase !== "playing" || !isSanma(state)) return false;
+  const p = k.players[seat];
+  if (!p.mustDiscard || p.drawn === null || p.afterCall || k.wall.length === 0) return false;
+  if (p.riichi > 0) return kindOf(p.drawn!) === NORTH;
+  return p.hand.some((t) => kindOf(t) === NORTH);
+}
+
 export function kakanOptions(state: GameState, seat: number): Kind[] {
   if (!canSelfKan(state, seat)) return [];
   const p = state.kyoku!.players[seat];
@@ -372,8 +405,8 @@ export function discardDeadline(state: GameState, seat: number, timeoutMs: numbe
 
 /** 順位（同点は起家に近い方＝席番号が小さい方を上位） */
 export function ranking(scores: number[]): number[] {
-  const order = [0, 1, 2, 3].sort((a, b) => scores[b] - scores[a] || a - b);
-  const ranks = new Array<number>(4);
+  const order = scores.map((_, i) => i).sort((a, b) => scores[b] - scores[a] || a - b);
+  const ranks = new Array<number>(scores.length);
   order.forEach((seat, i) => (ranks[seat] = i + 1));
   return ranks;
 }

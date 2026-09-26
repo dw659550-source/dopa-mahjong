@@ -12,6 +12,8 @@ import {
   playerDocId,
   type MatchDoc,
   type PlayerStatsDoc,
+  ALL_STATS_MODES,
+  type StatsMode,
 } from "@/lib/statsModel";
 
 export const runtime = "nodejs";
@@ -21,8 +23,8 @@ const ROOMS = "dopa_rooms";
 const PLAYERS = "dopa_players";
 const MATCHES = "dopa_matches";
 const ALIASES = "dopa_aliases";
-const MODES = ["tonpu", "hanchan", "issou"] as const;
-type Mode = (typeof MODES)[number];
+const MODES = ALL_STATS_MODES;
+type Mode = StatsMode;
 
 class HttpError extends Error {
   constructor(

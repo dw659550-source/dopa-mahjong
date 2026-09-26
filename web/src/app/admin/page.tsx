@@ -11,6 +11,9 @@ import {
   pct,
   type MatchDoc,
   type PlayerStatsDoc,
+  ALL_STATS_MODES,
+  statsModeLabel,
+  type StatsMode,
 } from "@/lib/statsModel";
 import { GAME_LENGTH_LABEL, type GameLength, type Rules } from "@dopa/shared";
 
@@ -301,7 +304,7 @@ function MatchesTab({ api, flash }: { api: Api; flash: (m: string) => void }) {
         <div key={m.id} className={`card p-3 flex flex-col gap-1 text-sm ${m.excluded ? "opacity-60" : ""}`}>
           <div className="flex items-center justify-between">
             <span className="font-bold">
-              {GAME_LENGTH_LABEL[m.mode] ?? m.mode}・{fmtTime(m.endedAt)}
+              {statsModeLabel(m.mode)}・{fmtTime(m.endedAt)}
               {m.cpuGame && <span className="ml-2 text-xs text-dp-muted">CPU戦</span>}
               {m.excluded && <span className="ml-2 text-dp-bad">除外中</span>}
             </span>
@@ -335,7 +338,7 @@ function MatchesTab({ api, flash }: { api: Api; flash: (m: string) => void }) {
 }
 
 function PlayersTab({ api, flash }: { api: Api; flash: (m: string) => void }) {
-  const [mode, setMode] = useState<GameLength>("tonpu");
+  const [mode, setMode] = useState<StatsMode>("tonpu");
   const { data, error, reload } = useLoader(() => api<PlayerStatsDoc[]>("listPlayers", { mode }), [api, mode]);
   const [editing, setEditing] = useState<PlayerStatsDoc | null>(null);
   const [form, setForm] = useState<Record<string, string>>({});
@@ -344,7 +347,7 @@ function PlayersTab({ api, flash }: { api: Api; flash: (m: string) => void }) {
   // 統合はすべての対局の種類に対して行うので、どれかに戦績がある名前をすべて候補にする
   const names = useLoader(async () => {
     const lists = await Promise.all(
-      (["tonpu", "hanchan", "issou"] as const).map((m) => api<PlayerStatsDoc[]>("listPlayers", { mode: m })),
+      ALL_STATS_MODES.map((m) => api<PlayerStatsDoc[]>("listPlayers", { mode: m })),
     );
     return Array.from(new Set(lists.flat().map((p) => p.name))).sort((x, y) => x.localeCompare(y, "ja"));
   }, [api]);
@@ -358,9 +361,9 @@ function PlayersTab({ api, flash }: { api: Api; flash: (m: string) => void }) {
   return (
     <div className="flex flex-col gap-2">
       <div className="flex gap-1.5 items-center">
-        {(["tonpu", "hanchan", "issou"] as const).map((m) => (
+        {ALL_STATS_MODES.map((m) => (
           <button key={m} className={mode === m ? "chip-on" : "chip-off"} onClick={() => setMode(m)}>
-            {GAME_LENGTH_LABEL[m]}
+            {statsModeLabel(m)}
           </button>
         ))}
         <button

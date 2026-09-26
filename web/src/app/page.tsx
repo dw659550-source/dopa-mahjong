@@ -8,7 +8,7 @@ import { HowToPlayBasics, HowToPlayDetails } from "@/components/HowToPlay";
 import RulesForm, { rulesText } from "@/components/RulesForm";
 import { isFirebaseConfigured } from "@/lib/firebase";
 import { getLastName, getOrCreatePlayerId, normalizeName, saveName } from "@/lib/identity";
-import { createRoom, joinRoom, subscribePlayingRooms, subscribeWaitingRooms, type RoomDoc } from "@/lib/rooms";
+import { activeSeats, createRoom, joinRoom, playersOf, subscribePlayingRooms, subscribeWaitingRooms, type RoomDoc } from "@/lib/rooms";
 import { syncClock } from "@/lib/clock";
 import { SE, unlockAudio } from "@/lib/sounds";
 
@@ -168,7 +168,7 @@ export default function LobbyPage() {
 
       <section className="card p-4 flex flex-col gap-3">
         <h2 className="text-lg font-black">CPU対戦</h2>
-        <p className="text-sm text-dp-muted">あなた＋CPU3人ですぐに対局します。</p>
+        <p className="text-sm text-dp-muted">あなた＋CPU（四人麻雀は3人、三人麻雀は2人）ですぐに対局します。</p>
         <RulesForm rules={cpuRules} onChange={setCpuRules} />
         <button className="btn-primary text-lg" disabled={busy || !configured} onClick={startCpu}>
           CPU対戦をはじめる
@@ -176,7 +176,7 @@ export default function LobbyPage() {
       </section>
 
       <section className="card p-4 flex flex-col gap-3">
-        <h2 className="text-lg font-black">4人対戦</h2>
+        <h2 className="text-lg font-black">みんなで対戦</h2>
         <button className="btn-primary" disabled={busy || !configured} onClick={create}>
           ルームを作成する
         </button>
@@ -216,9 +216,10 @@ export default function LobbyPage() {
         )}
         <ul className="flex flex-col gap-2">
           {waiting?.map((r) => {
-            const filled = r.seats.filter((x) => x !== null).length;
+            const cap = playersOf(r.rules);
+            const filled = activeSeats(r).filter((x) => x !== null).length;
             const host = r.seats.find((x) => x && x.playerId === r.hostId);
-            const full = filled >= 4;
+            const full = filled >= cap;
             return (
               <li key={r.code} className="rounded-xl bg-dp-panel2 px-3 py-2 flex items-center gap-3">
                 <div className="flex-1 min-w-0">
@@ -227,7 +228,7 @@ export default function LobbyPage() {
                     {host && <span className="ml-2 text-xs text-dp-muted">ホスト：{host.name}</span>}
                   </div>
                   <div className="text-xs text-dp-muted truncate">
-                    {filled}/4人・{rulesText(r.rules)}
+                    {filled}/{cap}人・{rulesText(r.rules)}
                   </div>
                   <div className="text-xs text-dp-muted truncate">
                     {r.seats

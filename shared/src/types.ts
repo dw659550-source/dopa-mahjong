@@ -8,17 +8,25 @@ export type GameLength = "tonpu" | "hanchan" | "issou";
 export const GAME_LENGTH_LABEL: Record<GameLength, string> = { tonpu: "東風戦", hanchan: "東南戦", issou: "一荘戦" };
 
 /**
- * 対局の長さごとの局の番号（東1局=0 … 北4局=15）。
- * last: オーラス。limit: 延長戦の上限（東風戦は南4局、東南戦は西4局、一荘戦は延長なし）。
+ * 対局の長さごとの場の数。rounds: 通常の場の数、extra: 延長戦で進める場の数
+ * （東風戦は南場まで、東南戦は西場まで、一荘戦は延長なし）。
  */
-export const GAME_LENGTH_ROUNDS: Record<GameLength, { last: number; limit: number }> = {
-  tonpu: { last: 3, limit: 7 },
-  hanchan: { last: 7, limit: 11 },
-  issou: { last: 15, limit: 15 },
+export const GAME_LENGTH_ROUNDS: Record<GameLength, { rounds: number; extra: number }> = {
+  tonpu: { rounds: 1, extra: 1 },
+  hanchan: { rounds: 2, extra: 1 },
+  issou: { rounds: 4, extra: 0 },
 };
+
+/** 局の通し番号（東1局=0）でのオーラスと延長戦の上限。1場の局数は人数と同じ */
+export function roundLimits(length: GameLength, players: number): { last: number; limit: number } {
+  const r = GAME_LENGTH_ROUNDS[length];
+  return { last: r.rounds * players - 1, limit: (r.rounds + r.extra) * players - 1 };
+}
 
 export interface Rules {
   length: GameLength;
+  /** 人数（三人麻雀は3）。古いデータには無い（=4） */
+  players?: 3 | 4;
   kuitan: boolean;
   aka: boolean;
   cpuLevel: CpuLevel;
@@ -43,6 +51,12 @@ export const RESULT_DISPLAY_MS = 12_000;
 export const START_SCORE = 25_000;
 export const RETURN_SCORE = 30_000;
 export const UMA = [20, 10, -10, -20];
+
+/** 人数ごとの持ち点・返し・ウマ（三人麻雀は天鳳の段位戦3人打ちと同じ 35000点持ち40000点返し、ウマ+20/0/-20） */
+export function scoreRules(players: number): { start: number; ret: number; uma: number[] } {
+  if (players === 3) return { start: 35_000, ret: 40_000, uma: [20, 0, -20] };
+  return { start: START_SCORE, ret: RETURN_SCORE, uma: UMA };
+}
 
 export interface SeatInfo {
   name: string;
@@ -99,6 +113,11 @@ export interface PlayerState {
   /** 槍槓の対象になっている加槓牌 */
   kakanTile: Tile | null;
   kakanPendingMiss: number[];
+  /** 三人麻雀で抜いた北（古いデータには無い） */
+  nuki?: Tile[];
+  /** 直前に抜いた北（ロンの対象になっている間だけ） */
+  nukiTile?: Tile | null;
+  nukiPendingMiss?: number[];
   /** 包の責任者 */
   pao: { seat: number; yaku: string } | null;
   calledThisKyoku: boolean;
@@ -167,6 +186,8 @@ export interface KifuPlayer {
   melds: Meld[];
   river: { tile: Tile; tsumogiri: boolean; riichi: boolean; calledBy: number | null }[];
   riichi: boolean;
+  /** 三人麻雀で抜いた北 */
+  nuki?: Tile[];
 }
 
 export interface KifuRecord {
@@ -210,6 +231,7 @@ export type GameEventType =
   | "chi"
   | "pon"
   | "kan"
+  | "nuki"
   | "ron"
   | "tsumo"
   | "ryukyoku"
@@ -254,7 +276,11 @@ export interface GameState {
   startedAt: number;
 }
 
-export type RonTarget = { type: "discard"; from: number; index: number } | { type: "kakan"; from: number };
+export type RonTarget =
+  | { type: "discard"; from: number; index: number }
+  | { type: "kakan"; from: number }
+  /** 三人麻雀の北抜きで抜かれた北 */
+  | { type: "nuki"; from: number };
 
 export type Action =
   | { type: "discard"; seat: number; tile: Tile; riichi?: boolean }
@@ -263,6 +289,8 @@ export type Action =
   | { type: "chi" | "pon" | "minkan"; seat: number; from: number; index: number; tiles: Tile[] }
   | { type: "ankan"; seat: number; kind: Kind }
   | { type: "kakan"; seat: number; kind: Kind }
+  /** 三人麻雀の北抜き */
+  | { type: "nuki"; seat: number }
   | { type: "kyuushu"; seat: number }
   | { type: "opts"; seat: number; opts: Partial<SeatOpts> }
   | { type: "connected"; seat: number; connected: boolean }

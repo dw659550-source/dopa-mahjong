@@ -7,7 +7,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import StatsDetail from "@/components/StatsDetail";
 import { HISTORY_PAGE, fetchMatchesPage, subscribeAllPlayerStats } from "@/lib/rooms";
 import { getLastName, normalizeName } from "@/lib/identity";
-import { combineByName, fmtPoints, type MatchDoc, type PlayerStatsDoc } from "@/lib/statsModel";
+import { combineByName, fmtPoints, isSanmaMode, statsModeLabel, type MatchDoc, type PlayerStatsDoc } from "@/lib/statsModel";
 
 
 /** 1回の「読み込み」で最大何ページ（100件ずつ）さかのぼるか */
@@ -76,7 +76,12 @@ function NameForm() {
 function PlayerView({ name }: { name: string }) {
   const [docs, setDocs] = useState<PlayerStatsDoc[] | null>(null);
   useEffect(() => subscribeAllPlayerStats(setDocs), []);
-  const stats = useMemo(() => (docs ? combineByName(docs).find((d) => d.name === name) ?? null : null), [docs, name]);
+  // 四人麻雀と三人麻雀は点数の付き方が違うので別々に集計する
+  const [sanma, setSanma] = useState(false);
+  const stats = useMemo(
+    () => (docs ? combineByName(docs.filter((d) => isSanmaMode(d.mode) === sanma)).find((d) => d.name === name) ?? null : null),
+    [docs, name, sanma],
+  );
 
   // 対局履歴（新しい順）。全対局を100件ずつ読み、この名前が参加したものだけ残す
   const [matches, setMatches] = useState<MatchDoc[]>([]);
@@ -121,21 +126,31 @@ function PlayerView({ name }: { name: string }) {
   return (
     <>
       <div className="card p-4 flex flex-col gap-3">
-        <h2 className="text-xl font-black break-all">{name}</h2>
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-xl font-black break-all">{name}</h2>
+          <div className="flex gap-1 shrink-0">
+            <button className={!sanma ? "chip-on" : "chip-off"} onClick={() => setSanma(false)}>
+              四人
+            </button>
+            <button className={sanma ? "chip-on" : "chip-off"} onClick={() => setSanma(true)}>
+              三人
+            </button>
+          </div>
+        </div>
         {!docs && <p className="text-dp-muted text-sm">読み込み中…</p>}
         {docs && !stats && <p className="text-dp-muted text-sm">ランキングの記録はまだありません（CPU対戦は記録に含まれません）。</p>}
         {stats && (
           <>
             <p className="text-xs text-dp-muted">
-              東風戦・東南戦・一荘戦の合計（CPU対戦を除く）
+              {sanma ? "三人麻雀" : "四人麻雀"}の東風戦・東南戦・一荘戦の合計（CPU対戦を除く）
               {stats.excluded && <span className="ml-2 text-dp-bad">※ランキング対象外</span>}
             </p>
-            <StatsDetail d={stats} />
+            <StatsDetail d={stats} players={sanma ? 3 : 4} />
           </>
         )}
       </div>
 
-      <Trends name={name} matches={matches} done={done} />
+      <Trends name={name} matches={matches.filter((m) => isSanmaMode(m.mode) === sanma)} done={done} sanma={sanma} />
 
       <div className="card p-4 flex flex-col gap-2">
         <h2 className="font-black">対局履歴</h2>
@@ -151,7 +166,7 @@ function PlayerView({ name }: { name: string }) {
                   <span className="flex-1 min-w-0">
                     <span className="block text-sm">
                       {new Date(m.endedAt).toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}
-                      <span className="ml-2 text-dp-muted">{GAME_LENGTH_LABEL[m.mode] ?? m.mode}</span>
+                      <span className="ml-2 text-dp-muted">{statsModeLabel(m.mode)}</span>
                       {m.cpuGame && <span className="ml-2 text-xs text-dp-muted">CPU対戦</span>}
                       {m.excluded && !m.cpuGame && <span className="ml-2 text-xs text-dp-bad">除外</span>}
                     </span>
@@ -186,7 +201,7 @@ function PlayerView({ name }: { name: string }) {
 }
 
 /** 直近の成績と、対戦相手ごとの成績（読み込んだ対局の範囲で計算。CPU対戦・除外された対局は含めない） */
-function Trends({ name, matches, done }: { name: string; matches: MatchDoc[]; done: boolean }) {
+function Trends({ name, matches, done, sanma }: { name: string; matches: MatchDoc[]; done: boolean; sanma: boolean }) {
   const counted = useMemo(() => matches.filter((m) => !m.cpuGame && !m.excluded), [matches]);
   const recent = counted.slice(0, 10);
   const rivals = useMemo(() => {
@@ -210,7 +225,10 @@ function Trends({ name, matches, done }: { name: string; matches: MatchDoc[]; do
   const mine = recent.map((m) => m.players.find((p) => !p.isCpu && p.name === name)!);
   const avgRank = mine.reduce((a, p) => a + p.rank, 0) / mine.length;
   const avgPts = mine.reduce((a, p) => a + p.points, 0) / mine.length;
-  const RANK_COLOR = ["bg-dp-accent text-black", "bg-dp-accent2 text-black", "bg-white/20", "bg-dp-bad text-white"];
+  // ラスは赤。三人麻雀は3位がラス
+  const RANK_COLOR = sanma
+    ? ["bg-dp-accent text-black", "bg-white/20", "bg-dp-bad text-white"]
+    : ["bg-dp-accent text-black", "bg-dp-accent2 text-black", "bg-white/20", "bg-dp-bad text-white"];
 
   return (
     <div className="card p-4 flex flex-col gap-3">
