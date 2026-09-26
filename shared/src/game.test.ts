@@ -305,3 +305,25 @@ test("自分のツモ牌で和了できるときは、ツモした瞬間に自�
   const again = applyAction(r.state, { type: "discard", seat: 0, tile: winTile }, 100);
   assert.ok(again.error, "和了後のツモ切りは受け付けない");
 });
+
+test("局が終わるたびに牌譜（終局時の盤面）が記録される", () => {
+  let s = createGame(cpuSeats(), { ...DEFAULT_RULES }, 4242, 0);
+  assert.equal(s.lastKifu, null);
+  let now = 0;
+  const serials: number[] = [];
+  for (let i = 0; i < 200000 && s.phase !== "ended"; i++) {
+    now += 300;
+    s = applyAction(s, { type: "tick" }, now).state;
+    const k = s.lastKifu;
+    if (k && serials[serials.length - 1] !== k.serial) {
+      serials.push(k.serial);
+      assert.equal(k.players.length, 4);
+      assert.equal(k.names.length, 4);
+      assert.deepEqual(k.result.scoresAfter, k.scoresBefore.map((x, j) => x + k.result.deltas[j]));
+      const tiles = k.players.reduce((a, p) => a + p.river.length + p.hand.length, 0);
+      assert.ok(tiles >= 52, "手牌と河の枚数が少なすぎる");
+    }
+  }
+  assert.ok(serials.length >= 4);
+  assert.deepEqual(serials, serials.map((_, i) => i + 1));
+});

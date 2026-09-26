@@ -83,7 +83,7 @@ function River({
   );
 }
 
-function Melds({ melds, seat, aka, size = "xs" }: { melds: Meld[]; seat: number; aka: boolean; size?: "xs" | "sm" }) {
+export function Melds({ melds, seat, aka, size = "xs" }: { melds: Meld[]; seat: number; aka: boolean; size?: "xs" | "sm" }) {
   if (melds.length === 0) return null;
   return (
     <div className="flex flex-wrap gap-2 justify-end">

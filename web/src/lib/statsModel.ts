@@ -1,5 +1,5 @@
 // 戦績データの形と計算（ブラウザ・管理画面サーバーの両方で使う）
-import type { GameLength } from "@dopa/shared";
+import type { GameLength, KifuRecord } from "@dopa/shared";
 
 export interface YakumanRecord {
   yaku: string;
@@ -54,6 +54,38 @@ export interface MatchDoc {
   /** CPU対戦（あなた＋CPU3人）。ランキングには含めない */
   cpuGame?: boolean;
   players: MatchPlayerRecord[];
+}
+
+/**
+ * 牌譜（1局ぶんの終局時の盤面）。対局の記録と同じ dopa_matches に保存する
+ * （Firestoreのルールを貼り替えずに済むように）。endedAt・excluded を持たないので、
+ * 対局一覧（endedAt順）やランキング除外の処理には含まれない。
+ */
+export interface KifuDoc {
+  kind: "kifu";
+  /** 対局ID（MatchDoc.id） */
+  kifuOf: string;
+  serial: number;
+  mode: GameLength;
+  aka: boolean;
+  /**
+   * KifuRecord をJSON文字列にしたもの。
+   * Firestoreは「配列の中の配列」を保存できないため、そのままでは書き込めない。
+   */
+  json: string;
+}
+
+/** 牌譜を画面で使う形にしたもの */
+export interface KifuView extends KifuRecord {
+  aka: boolean;
+}
+
+export function parseKifu(d: KifuDoc): KifuView {
+  return { ...(JSON.parse(d.json) as KifuRecord), aka: d.aka };
+}
+
+export function kifuDocId(matchId: string, serial: number): string {
+  return `${matchId}__k${String(serial).padStart(3, "0")}`;
 }
 
 export const EDITABLE_FIELDS = [

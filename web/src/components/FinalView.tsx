@@ -9,8 +9,10 @@ export default function FinalView({
   recorded,
   onBackToRoom,
   cpuGame,
+  matchId,
 }: {
   state: GameState;
+  matchId?: string;
   recorded: boolean;
   onBackToRoom?: () => void;
   cpuGame?: boolean;
@@ -64,6 +66,12 @@ export default function FinalView({
           ランキング
         </Link>
       </div>
+      {matchId && (
+        // 部屋から出ないよう別タブで開く
+        <Link href={`/match/${encodeURIComponent(matchId)}`} target="_blank" rel="noopener" className="text-center text-sm text-dp-accent underline">
+          この対局の牌譜を見る
+        </Link>
+      )}
     </div>
   );
 }

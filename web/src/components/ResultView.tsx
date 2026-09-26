@@ -9,16 +9,16 @@ function sortTiles(t: TileId[]): TileId[] {
   return t.slice().sort((a, b) => kindOf(a) - kindOf(b) || a - b);
 }
 
-function WinBlock({ w, state }: { w: WinDetail; state: GameState }) {
-  const aka = state.rules.aka;
+/** 和了の内訳（和了画面と牌譜で使う） */
+export function WinBlock({ w, names, aka }: { w: WinDetail; names: string[]; aka: boolean }) {
   const concealed = sortTiles(w.hand.filter((t) => t !== w.winTile));
-  const winnerName = state.seats[w.seat].name;
+  const winnerName = names[w.seat];
   return (
     <div className="rounded-xl bg-black/25 p-3 flex flex-col gap-2">
       <div className="flex items-baseline justify-between gap-2">
         <span className="font-black text-lg">
           {winnerName}
-          {w.fromSeat !== null && <span className="text-sm text-dp-muted ml-2">← {state.seats[w.fromSeat].name}</span>}
+          {w.fromSeat !== null && <span className="text-sm text-dp-muted ml-2">← {names[w.fromSeat]}</span>}
         </span>
         <span className="font-black text-dp-accent text-xl">{w.points.toLocaleString()}点</span>
       </div>
@@ -46,7 +46,7 @@ function WinBlock({ w, state }: { w: WinDetail; state: GameState }) {
       </ul>
       <p className="text-sm font-bold">
         {w.yakumanMult > 0 ? w.label : `${w.fu}符 ${w.han}飜${w.label ? `　${w.label}` : ""}`}
-        {w.pao !== null && <span className="ml-2 text-dp-bad">包：{state.seats[w.pao].name}</span>}
+        {w.pao !== null && <span className="ml-2 text-dp-bad">包：{names[w.pao]}</span>}
       </p>
     </div>
   );
@@ -80,7 +80,7 @@ export default function ResultView({
         </div>
 
         {r.wins.map((w, i) => (
-          <WinBlock key={i} w={w} state={state} />
+          <WinBlock key={i} w={w} names={state.seats.map((x) => x.name)} aka={aka} />
         ))}
 
         {r.kind !== "win" && (

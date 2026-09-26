@@ -76,6 +76,7 @@ export function createGame(seats: SeatInfo[], rules: Rules, seed: number, now: n
     stats: seats.map(() => ({ kyokus: 0, wins: 0, dealins: 0, calls: 0, riichis: 0, yakuman: [] })),
     seed: seed >>> 0,
     kyokuSerial: 0,
+    lastKifu: null,
     events: [],
     eventSeq: 0,
     startedAt: now,
@@ -694,8 +695,27 @@ function finishKyoku(
   isAbort: boolean,
   now: number,
 ) {
+  const scoresBefore = s.scores.slice();
   for (let i = 0; i < 4; i++) s.scores[i] += result.deltas[i];
   result.scoresAfter = s.scores.slice();
+  const k = s.kyoku;
+  s.lastKifu = k
+    ? {
+        serial: s.kyokuSerial,
+        roundLabel: result.roundLabel,
+        dealer: dealerSeat(s),
+        names: s.seats.map((x) => x.name),
+        scoresBefore,
+        players: k.players.map((p) => ({
+          hand: p.hand.slice(),
+          drawn: p.drawn,
+          melds: p.melds.map((m) => ({ ...m, tiles: m.tiles.slice() })),
+          river: p.river.map((r) => ({ tile: r.tile, tsumogiri: r.tsumogiri, riichi: r.riichi, calledBy: r.calledBy })),
+          riichi: p.riichi > 0,
+        })),
+        result: JSON.parse(JSON.stringify(result)),
+      }
+    : null;
   s.result = result;
   s.phase = "result";
   s.resultUntil = now + RESULT_DISPLAY_MS;

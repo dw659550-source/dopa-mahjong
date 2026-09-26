@@ -1,11 +1,15 @@
 import {
   collection,
   doc,
+  getDoc,
+  getDocs,
   limit as fsLimit,
   onSnapshot,
+  orderBy,
   query,
   runTransaction,
   setDoc,
+  startAfter,
   where,
   type Transaction,
 } from "firebase/firestore";
@@ -26,7 +30,11 @@ import {
   aliasDocId,
   applyMatchPlayer,
   emptyStats,
+  kifuDocId,
+  parseKifu,
   playerDocId,
+  type KifuDoc,
+  type KifuView,
   type MatchDoc,
   type MatchPlayerRecord,
   type PlayerStatsDoc,
@@ -418,6 +426,22 @@ export async function sendGameAction(code: string, action: Action): Promise<Acti
         summary: summarize(state),
         updatedAt: serverNow(),
       };
+      // 局が終わったら牌譜（終局時の盤面）を1局1件で保存する。
+      // ここでの書き込みが失敗すると対局そのものが進まなくなるので、形と大きさに気をつける
+      const kifu = state.lastKifu;
+      const kifuJson = kifu && kifu.serial !== prev.lastKifu?.serial ? JSON.stringify(kifu) : null;
+      if (kifu && kifuJson && kifuJson.length < 200_000) {
+        const matchId = `${code}-${state.startedAt}`;
+        const rec: KifuDoc = {
+          kind: "kifu",
+          kifuOf: matchId,
+          serial: kifu.serial,
+          mode: state.rules.length,
+          aka: state.rules.aka,
+          json: kifuJson,
+        };
+        tx.set(doc(db, "dopa_matches", kifuDocId(matchId, kifu.serial)), rec);
+      }
       if (state.phase === "ended" && !room.recorded) {
         const plan = await prepareRecord(tx, room, state);
         update.status = "ended";
@@ -509,4 +533,39 @@ export function subscribeAllPlayerStats(cb: (docs: PlayerStatsDoc[]) => void) {
 export function subscribeRanking(mode: string, cb: (docs: PlayerStatsDoc[]) => void) {
   const q = query(collection(db, "dopa_players"), where("mode", "==", mode), fsLimit(1000));
   return onSnapshot(q, (snap) => cb(snap.docs.map((d) => d.data() as PlayerStatsDoc)));
+}
+
+// ------------------------------------------------------------ 対局履歴・牌譜
+
+/** 1回に読む対局数（Firestoreのルールで一覧は100件まで） */
+export const HISTORY_PAGE = 100;
+
+/**
+ * 終わった対局を新しい順に読む（before を渡すとそれより前）。
+ * 名前での絞り込みはブラウザ側で行う（名前ごとの索引を作らずに済むように）。
+ */
+export async function fetchMatchesPage(before?: number): Promise<MatchDoc[]> {
+  const base = collection(db, "dopa_matches");
+  const q =
+    before === undefined
+      ? query(base, orderBy("endedAt", "desc"), fsLimit(HISTORY_PAGE))
+      : query(base, orderBy("endedAt", "desc"), startAfter(before), fsLimit(HISTORY_PAGE));
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => d.data() as MatchDoc);
+}
+
+export async function fetchMatch(id: string): Promise<MatchDoc | null> {
+  const snap = await getDoc(doc(db, "dopa_matches", id));
+  if (!snap.exists()) return null;
+  const m = snap.data() as MatchDoc | KifuDoc;
+  return "kind" in m ? null : m;
+}
+
+export async function fetchKifu(matchId: string): Promise<KifuView[]> {
+  const q = query(collection(db, "dopa_matches"), where("kifuOf", "==", matchId), fsLimit(HISTORY_PAGE));
+  const snap = await getDocs(q);
+  return snap.docs
+    .map((d) => d.data() as KifuDoc)
+    .sort((a, b) => a.serial - b.serial)
+    .map(parseKifu);
 }
