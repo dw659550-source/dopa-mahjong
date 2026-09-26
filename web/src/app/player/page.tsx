@@ -26,13 +26,16 @@ export default function PlayerPage() {
 function PlayerInner() {
   const search = useSearchParams();
   const name = (search.get("name") ?? "").trim();
+  // 自分の名前（この端末で最後に使った名前）なら「マイページ」と表示する
+  const [isMine, setIsMine] = useState(!name);
+  useEffect(() => setIsMine(!name || normalizeName(getLastName()) === name), [name]);
   return (
     <main className="flex flex-col gap-3">
       <div className="flex items-center justify-between">
         <Link href="/" className="text-dp-muted text-sm">
           ‹ ロビー
         </Link>
-        <h1 className="text-2xl font-black">戦績</h1>
+        <h1 className="text-2xl font-black">{isMine ? "マイページ" : "戦績"}</h1>
         <Link href="/ranking" className="text-dp-muted text-sm">
           ランキング
         </Link>
