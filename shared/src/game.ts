@@ -26,6 +26,7 @@ import {
   AUTO_TSUMOGIRI_MS,
   DISCARD_TIMEOUT_MS,
   EXHAUST_GRACE_MS,
+  GAME_LENGTH_ROUNDS,
   RESULT_DISPLAY_MS,
   RETURN_SCORE,
   START_SCORE,
@@ -751,9 +752,7 @@ function finishKyoku(
 }
 
 function decideNext(s: GameState, renchan: boolean, isRyukyoku: boolean, isAbort: boolean) {
-  const tonpu = s.rules.length === "tonpu";
-  const lastIdx = tonpu ? 3 : 7;
-  const limitIdx = tonpu ? 7 : 11;
+  const { last: lastIdx, limit: limitIdx } = GAME_LENGTH_ROUNDS[s.rules.length];
   const cur = s.roundWind * 4 + s.kyokuNum;
   const dealer = dealerSeat(s);
   let nextIdx = cur;

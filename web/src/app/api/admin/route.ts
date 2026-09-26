@@ -21,7 +21,7 @@ const ROOMS = "dopa_rooms";
 const PLAYERS = "dopa_players";
 const MATCHES = "dopa_matches";
 const ALIASES = "dopa_aliases";
-const MODES = ["tonpu", "hanchan"] as const;
+const MODES = ["tonpu", "hanchan", "issou"] as const;
 type Mode = (typeof MODES)[number];
 
 class HttpError extends Error {
@@ -47,7 +47,7 @@ function str(v: unknown, label: string): string {
 }
 
 function mode(v: unknown): Mode {
-  if (v === "tonpu" || v === "hanchan") return v;
+  if (MODES.includes(v as Mode)) return v as Mode;
   throw new HttpError(400, "対局の種類が不正です");
 }
 

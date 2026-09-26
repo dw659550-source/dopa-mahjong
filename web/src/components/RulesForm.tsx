@@ -1,6 +1,6 @@
 "use client";
 
-import type { CpuLevel, Rules } from "@dopa/shared";
+import { GAME_LENGTH_LABEL, type CpuLevel, type Rules } from "@dopa/shared";
 
 export const CPU_LEVEL_LABEL: Record<CpuLevel, string> = { weak: "弱い", normal: "普通", strong: "強い" };
 
@@ -49,10 +49,7 @@ export default function RulesForm({
       <Toggle
         value={rules.length}
         disabled={disabled}
-        options={[
-          { v: "tonpu", label: "東風戦" },
-          { v: "hanchan", label: "東南戦" },
-        ]}
+        options={(["tonpu", "hanchan", "issou"] as const).map((v) => ({ v, label: GAME_LENGTH_LABEL[v] }))}
         onChange={(v) => onChange({ ...rules, length: v })}
       />
       <span className="text-dp-muted">喰い断</span>
@@ -92,7 +89,7 @@ export default function RulesForm({
 
 export function rulesText(r: Rules): string {
   return [
-    r.length === "tonpu" ? "東風戦" : "東南戦",
+    GAME_LENGTH_LABEL[r.length] ?? r.length,
     `喰い断${r.kuitan ? "あり" : "なし"}`,
     `赤ドラ${r.aka ? "あり" : "なし"}`,
   ].join("・");

@@ -3,14 +3,13 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { kindOf, type Tile as TileId } from "@dopa/shared";
+import { GAME_LENGTH_LABEL, kindOf, type Tile as TileId } from "@dopa/shared";
 import Tile from "@/components/Tile";
 import { Melds } from "@/components/GameView";
 import { WinBlock } from "@/components/ResultView";
 import { fetchKifu, fetchMatch } from "@/lib/rooms";
 import { fmtPoints, type KifuView, type MatchDoc } from "@/lib/statsModel";
 
-const MODE_LABEL = { tonpu: "東風戦", hanchan: "東南戦" } as const;
 const WIND = ["東", "南", "西", "北"];
 
 function sortTiles(t: TileId[]): TileId[] {
@@ -58,7 +57,7 @@ export default function MatchPage() {
         <div className="card p-4 flex flex-col gap-2">
           <p className="text-sm">
             {new Date(match.endedAt).toLocaleString("ja-JP")}
-            <span className="ml-2 text-dp-muted">{MODE_LABEL[match.mode]}</span>
+            <span className="ml-2 text-dp-muted">{GAME_LENGTH_LABEL[match.mode] ?? match.mode}</span>
             {match.cpuGame && <span className="ml-2 text-xs text-dp-muted">CPU対戦</span>}
           </p>
           <table className="w-full text-sm">

@@ -2,7 +2,20 @@ import type { Kind, Tile } from "./tiles.ts";
 import type { Meld, YakuItem } from "./yaku.ts";
 
 export type CpuLevel = "weak" | "normal" | "strong";
-export type GameLength = "tonpu" | "hanchan";
+export type GameLength = "tonpu" | "hanchan" | "issou";
+
+/** 対局の長さの表示名 */
+export const GAME_LENGTH_LABEL: Record<GameLength, string> = { tonpu: "東風戦", hanchan: "東南戦", issou: "一荘戦" };
+
+/**
+ * 対局の長さごとの局の番号（東1局=0 … 北4局=15）。
+ * last: オーラス。limit: 延長戦の上限（東風戦は南4局、東南戦は西4局、一荘戦は延長なし）。
+ */
+export const GAME_LENGTH_ROUNDS: Record<GameLength, { last: number; limit: number }> = {
+  tonpu: { last: 3, limit: 7 },
+  hanchan: { last: 7, limit: 11 },
+  issou: { last: 15, limit: 15 },
+};
 
 export interface Rules {
   length: GameLength;

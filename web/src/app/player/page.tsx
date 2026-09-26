@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { GAME_LENGTH_LABEL } from "@dopa/shared";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import StatsDetail from "@/components/StatsDetail";
@@ -8,7 +9,6 @@ import { HISTORY_PAGE, fetchMatchesPage, subscribeAllPlayerStats } from "@/lib/r
 import { getLastName, normalizeName } from "@/lib/identity";
 import { combineByName, fmtPoints, type MatchDoc, type PlayerStatsDoc } from "@/lib/statsModel";
 
-const MODE_LABEL = { tonpu: "東風戦", hanchan: "東南戦" } as const;
 
 /** 1回の「読み込み」で最大何ページ（100件ずつ）さかのぼるか */
 const MAX_PAGES_PER_LOAD = 5;
@@ -127,7 +127,7 @@ function PlayerView({ name }: { name: string }) {
         {stats && (
           <>
             <p className="text-xs text-dp-muted">
-              東風戦・東南戦の合計（CPU対戦を除く）
+              東風戦・東南戦・一荘戦の合計（CPU対戦を除く）
               {stats.excluded && <span className="ml-2 text-dp-bad">※ランキング対象外</span>}
             </p>
             <StatsDetail d={stats} />
@@ -151,7 +151,7 @@ function PlayerView({ name }: { name: string }) {
                   <span className="flex-1 min-w-0">
                     <span className="block text-sm">
                       {new Date(m.endedAt).toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}
-                      <span className="ml-2 text-dp-muted">{MODE_LABEL[m.mode]}</span>
+                      <span className="ml-2 text-dp-muted">{GAME_LENGTH_LABEL[m.mode] ?? m.mode}</span>
                       {m.cpuGame && <span className="ml-2 text-xs text-dp-muted">CPU対戦</span>}
                       {m.excluded && !m.cpuGame && <span className="ml-2 text-xs text-dp-bad">除外</span>}
                     </span>

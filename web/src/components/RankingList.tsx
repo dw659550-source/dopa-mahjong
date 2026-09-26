@@ -48,7 +48,7 @@ export default function RankingList({
   return (
     <div className="flex flex-col gap-2">
       <div className="card p-3 flex flex-col gap-2">
-        <p className="text-xs text-dp-muted">東風戦・東南戦の合計です</p>
+        <p className="text-xs text-dp-muted">東風戦・東南戦・一荘戦の合計です</p>
         <div className="flex gap-1.5 flex-wrap items-center">
           <span className="text-xs text-dp-muted mr-1">並べ替え</span>
           {(Object.keys(SORT_LABEL) as SortKey[]).map((k) => (
