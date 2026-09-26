@@ -343,12 +343,19 @@ export default function GameView({ state, mySeat, onAction, connected }: Props) 
   const myDrawn = me?.drawn ?? null;
   const prevDrawn = useRef<TileId | null>(myDrawn);
   useEffect(() => {
+    // 届いた新しいイベントはすべて処理する（以前は最後の4件だけにしていたため、
+    // CPUの打牌などとまとめて届いたときに立直の声・鳴きの音が抜けることがあった）。
+    // ただし打牌音は重なるとうるさいので最後の数件だけ、古すぎるイベント（タブを離れていた間など）は鳴らさない
     const fresh = state.events.filter((e) => e.id > lastEvent.current);
     lastEvent.current = state.eventSeq;
-    const recent = fresh.slice(-4);
-    for (const e of recent) {
+    const nowMs = serverNow();
+    const discards = fresh.filter((e) => e.type === "discard");
+    const lastDiscards = new Set(discards.slice(-3).map((e) => e.id));
+    for (const e of fresh) {
+      if (nowMs - e.at > 5000) continue;
       switch (e.type) {
         case "discard":
+          if (!lastDiscards.has(e.id)) break;
           if (e.seat === mySeat) SE.discard();
           else SE.otherDiscard();
           break;
@@ -410,6 +417,12 @@ export default function GameView({ state, mySeat, onAction, connected }: Props) 
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.eventSeq, state.events, mySeat]);
+  // 対局開始の「ジャーン」。最初の局の開始イベントは画面を開く前に起きているので、
+  // 開始直後（5秒以内）に対局画面を開いたときに1回だけ鳴らす
+  useEffect(() => {
+    if (state.kyokuSerial === 1 && serverNow() - state.startedAt < 5000) SE.gameStart();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   useEffect(() => {
     if (myDrawn !== null && myDrawn !== prevDrawn.current && playing) SE.draw();
     prevDrawn.current = myDrawn;
