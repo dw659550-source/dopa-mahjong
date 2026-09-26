@@ -339,6 +339,7 @@ export default function GameView({ state, mySeat, onAction, connected }: Props) 
 
   // イベントに応じた効果音・演出
   const lastEvent = useRef<number>(state.eventSeq);
+  const yakumanPlayed = useRef<number>(-1);
   const myDrawn = me?.drawn ?? null;
   const prevDrawn = useRef<TileId | null>(myDrawn);
   useEffect(() => {
@@ -364,10 +365,15 @@ export default function GameView({ state, mySeat, onAction, connected }: Props) 
           SE.kan();
           break;
         case "ron":
-          SE.ron();
-          break;
         case "tsumo":
-          SE.tsumo();
+          // 役満は特別な音（同じ和了で音が重ならないよう1回だけ）
+          if (state.result?.wins.some((w) => w.yakumanMult > 0)) {
+            if (yakumanPlayed.current !== state.kyokuSerial) {
+              yakumanPlayed.current = state.kyokuSerial;
+              SE.yakuman();
+            }
+          } else if (e.type === "ron") SE.ron();
+          else SE.tsumo();
           break;
         case "ryukyoku":
         case "abort":
@@ -402,6 +408,7 @@ export default function GameView({ state, mySeat, onAction, connected }: Props) 
         }, 1300);
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.eventSeq, state.events, mySeat]);
   useEffect(() => {
     if (myDrawn !== null && myDrawn !== prevDrawn.current && playing) SE.draw();
