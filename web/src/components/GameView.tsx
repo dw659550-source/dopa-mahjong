@@ -86,7 +86,7 @@ function River({
   );
 }
 
-export function Melds({ melds, seat, aka, size = "xs" }: { melds: Meld[]; seat: number; aka: boolean; size?: "xs" | "sm" }) {
+export function Melds({ melds, seat, aka, size = "xs" }: { melds: Meld[]; seat: number; aka: boolean; size?: "2xs" | "xs" | "sm" }) {
   if (melds.length === 0) return null;
   return (
     <div className="flex flex-wrap gap-2 justify-end">
@@ -128,7 +128,6 @@ function PlayerPanel({
   connected,
   highlightLast,
   banner,
-  showHand,
   riverRows,
 }: {
   state: GameState;
@@ -137,7 +136,6 @@ function PlayerPanel({
   connected: boolean;
   highlightLast: "callable" | "win" | null;
   banner: string | null;
-  showHand: boolean;
   /** 河のために確保しておく段数 */
   riverRows: number;
 }) {
@@ -148,7 +146,9 @@ function PlayerPanel({
   const aka = state.rules.aka;
   return (
     <div className={`relative rounded-xl p-2 ${me ? "bg-black/25" : "bg-black/20"} flex flex-col gap-1.5`}>
-      <div className="flex items-center gap-1.5 text-xs h-5 whitespace-nowrap overflow-hidden">
+      <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs min-h-5">
+        {/* 名前などは1行に収め、副露の場所が足りないときだけ副露を次の行に回す */}
+        <div className="flex items-center gap-1.5 h-5 whitespace-nowrap overflow-hidden grow basis-0 min-w-[6.5rem]">
         <span
           className={`w-5 h-5 shrink-0 rounded flex items-center justify-center font-black ${
             w === 0 ? "bg-dp-bad text-white" : "bg-white/15"
@@ -156,31 +156,19 @@ function PlayerPanel({
         >
           {WIND[w]}
         </span>
-        <span className="font-bold truncate min-w-0 max-w-[7rem]">{info.name}</span>
-        <span className="font-mono text-dp-accent shrink-0">{state.scores[seat].toLocaleString()}</span>
         {p.riichi > 0 && <span className="px-1 rounded bg-dp-accent text-black font-black shrink-0">立直</span>}
-        {info.isCpu && <span className="text-dp-muted shrink-0">CPU</span>}
+        <span className="font-bold truncate min-w-[1.75rem] max-w-[7rem]">{info.name}</span>
+        <span className="font-mono text-dp-accent shrink-0">{state.scores[seat].toLocaleString()}</span>
         {!info.isCpu && !connected && <span className="text-dp-bad font-bold shrink-0">切断中</span>}
         {!info.isCpu && connected && state.opts[seat].autoHora && <span className="text-dp-accent2 truncate">自動和了</span>}
-      </div>
-      {/* 副露・河の高さはあらかじめ確保しておく（鳴きや河の段が増えても画面がずれないように） */}
-      <div className={me ? "" : "min-h-[24px]"}>
-        <Melds melds={p.melds} seat={seat} aka={aka} />
-      </div>
-      {showHand && (
-        <div className="flex flex-wrap gap-[1px]">
-          {sortHand(p.hand).map((t) => (
-            <Tile key={t} tile={t} aka={aka} size="xs" />
-          ))}
         </div>
-      )}
-      {!showHand && !me && (
-        <div className="flex gap-[1px] opacity-60">
-          {Array.from({ length: p.hand.length }).map((_, i) => (
-            <span key={i} className="w-[7px] h-[12px] rounded-[2px] bg-[#1d8a63]" />
-          ))}
-        </div>
-      )}
+        {/* 副露は名前の行の右端に小さく表示（行を増やさないため） */}
+        {!me && p.melds.length > 0 && (
+          <span className="ml-auto shrink-0">
+            <Melds melds={p.melds} seat={seat} aka={aka} size="2xs" />
+          </span>
+        )}
+      </div>
       <River river={p.river} aka={aka} highlightLast={highlightLast} rows={riverRows} />
       {banner && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
@@ -195,7 +183,7 @@ function PlayerPanel({
 
 // ------------------------------------------------------------ タイマー
 
-function DiscardTimer({ state, seat }: { state: GameState; seat: number }) {
+function DiscardTimer({ state, seat, label, labelClass }: { state: GameState; seat: number; label: string; labelClass: string }) {
   const [now, setNow] = useState(serverNow());
   const lastBeep = useRef<number>(-1);
   useEffect(() => {
@@ -215,18 +203,22 @@ function DiscardTimer({ state, seat }: { state: GameState; seat: number }) {
     }
     if (secs > 3) lastBeep.current = -1;
   }, [secs, deadline, total]);
+  // 案内文とタイマーを1行にまとめる（高さはタイマーの有無で変わらない）
+  const text = <span className={`text-xs truncate min-w-0 flex-1 ${labelClass}`}>{label}</span>;
   if (deadline === null) {
-    // 高さはタイマー表示中と同じにする（表示の有無で画面がずれないように）
     return (
-      <div className="h-4 flex items-center">
-        <div className="flex-1 h-2 rounded-full bg-white/10" />
+      <div className="h-4 flex items-center gap-2">
+        {text}
+        <div className="w-2/5 h-2 rounded-full bg-white/10" />
+        <span className="w-6" />
       </div>
     );
   }
   const ratio = remain / total;
   return (
     <div className="h-4 flex items-center gap-2">
-      <div className="flex-1 h-2 rounded-full bg-white/10 overflow-hidden">
+      {text}
+      <div className="w-2/5 h-2 rounded-full bg-white/10 overflow-hidden">
         <div
           className={`h-full ${ratio < 0.3 ? "bg-dp-bad" : "bg-dp-accent2"}`}
           style={{ width: `${ratio * 100}%`, transition: "width 0.1s linear" }}
@@ -254,7 +246,7 @@ function SlotButton({
 }) {
   return (
     <button
-      className={`btn ${small ? "text-sm" : "text-lg"} px-1 py-2.5 h-12 w-full whitespace-nowrap ${color} ${
+      className={`btn ${small ? "text-sm" : "text-base"} px-1 py-1 h-10 w-full whitespace-nowrap ${color} ${
         show ? "pop-in" : "invisible pointer-events-none"
       }`}
       disabled={!show}
@@ -475,17 +467,17 @@ export default function GameView({ state, mySeat, onAction, connected }: Props) 
   return (
     <div className="flex flex-col gap-2">
       {/* 局の情報 */}
-      <div className="card px-3 py-2 flex items-center justify-between gap-2 text-sm">
-        <div className="flex flex-col">
-          <span className="font-black text-base">{roundLabel(state)}</span>
+      <div className="card px-3 py-1.5 flex items-center justify-between gap-2 text-sm">
+        <div className="flex items-baseline gap-2 whitespace-nowrap">
+          <span className="font-black">{roundLabel(state)}</span>
           <span className="text-xs text-dp-muted">
-            供託 {state.kyotaku}・残り山 <span className={k.wall.length <= 10 ? "text-dp-bad font-bold" : ""}>{k.wall.length}</span>
+            供託{state.kyotaku}・残り<span className={k.wall.length <= 10 ? "text-dp-bad font-bold" : ""}>{k.wall.length}</span>
           </span>
         </div>
         <div className="flex items-center gap-1">
-          <span className="text-xs text-dp-muted mr-1">ドラ表示</span>
+          <span className="text-xs text-dp-muted mr-0.5">ドラ</span>
           {doraIndicatorsShown(state).map((t) => (
-            <Tile key={t} tile={t} aka={aka} size="sm" />
+            <Tile key={t} tile={t} aka={aka} size="xs" />
           ))}
         </div>
       </div>
@@ -504,7 +496,6 @@ export default function GameView({ state, mySeat, onAction, connected }: Props) 
             connected={connected[order[0]]}
             highlightLast={highlight[order[0]]}
             banner={banners[order[0]]?.text ?? null}
-            showHand={false}
             riverRows={2}
           />
         </div>
@@ -515,7 +506,6 @@ export default function GameView({ state, mySeat, onAction, connected }: Props) 
           connected={connected[order[1]]}
           highlightLast={highlight[order[1]]}
           banner={banners[order[1]]?.text ?? null}
-          showHand={false}
           riverRows={3}
         />
         <PlayerPanel
@@ -525,7 +515,6 @@ export default function GameView({ state, mySeat, onAction, connected }: Props) 
           connected={connected[order[2]]}
           highlightLast={highlight[order[2]]}
           banner={banners[order[2]]?.text ?? null}
-          showHand={false}
           riverRows={3}
         />
         <div className="col-span-2">
@@ -536,7 +525,6 @@ export default function GameView({ state, mySeat, onAction, connected }: Props) 
             connected={connected[viewSeat]}
             highlightLast={null}
             banner={banners[viewSeat]?.text ?? null}
-            showHand={false}
             riverRows={2}
           />
         </div>
@@ -544,7 +532,22 @@ export default function GameView({ state, mySeat, onAction, connected }: Props) 
 
       {!spectator && mySeat !== null && me && (
         <div className="card p-2 flex flex-col gap-2">
-          <DiscardTimer state={state} seat={mySeat} />
+          <DiscardTimer
+            state={state}
+            seat={mySeat}
+            labelClass={riichiMode ? "text-dp-accent2 font-bold" : "text-dp-muted"}
+            label={
+              riichiMode
+                ? "立直する牌を選んでください"
+                : me.mustDiscard
+                  ? me.afterCall
+                    ? "鳴いた後の1枚を捨ててください"
+                    : "捨てる牌をタップ"
+                  : k.wall.length === 0
+                    ? "山切れ。流局を待っています"
+                    : "ツモ待ち"
+            }
+          />
 
           {/* 鳴き・和了ボタン。位置がずれて押し間違えないよう、各ボタンの場所は固定（押せないときは見えなくするだけ） */}
           <div className="grid grid-cols-4 gap-1.5">
@@ -577,20 +580,8 @@ export default function GameView({ state, mySeat, onAction, connected }: Props) 
               {withTiles(kanTile !== null ? [kanTile] : [], "カン")}
             </SlotButton>
           </div>
-          <p className={`text-center text-xs h-4 ${riichiMode ? "text-dp-accent2" : "text-dp-muted"}`}>
-            {riichiMode
-              ? "立直する牌を選んでください（光っていない牌は選べません）"
-              : me.mustDiscard
-                ? me.afterCall
-                  ? "鳴いた後の1枚を捨ててください"
-                  : "捨てる牌をタップ"
-                : k.wall.length === 0
-                  ? "山がなくなりました。流局を待っています"
-                  : "ツモ待ち"}
-          </p>
-
           {/* 手牌 */}
-          <div className="flex items-end justify-center pt-3 pb-1 overflow-x-auto">
+          <div className="flex items-end justify-center pt-2 overflow-x-auto">
             {sorted.map((t) => {
               const ok = riichiMode ? riichiOk.includes(t) : legal.includes(t);
               return (
@@ -637,7 +628,7 @@ export default function GameView({ state, mySeat, onAction, connected }: Props) 
             ).map(([key, label]) => (
               <button
                 key={key}
-                className={opts![key] ? "chip-on" : "chip-off"}
+                className={`${opts![key] ? "chip-on" : "chip-off"} !px-2.5 !py-1 !text-xs`}
                 onClick={() => act({ type: "opts", seat: mySeat, opts: { [key]: !opts![key] } })}
               >
                 {label} {opts![key] ? "ON" : "OFF"}
