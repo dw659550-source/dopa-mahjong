@@ -202,6 +202,31 @@ function autoRonCheck(s: GameState, target: RonTarget, now: number): boolean {
   return true;
 }
 
+/**
+ * 自分の打牌で聴牌したとき、他家の「まだロンできる捨て牌」（各自の最新の捨て牌・槍槓の対象）が
+ * 当たり牌なら自動で和了する。自動和了は捨てられた瞬間にしか判定していなかったため、
+ * ロンボタンは出るのに自動和了しない場面があった。
+ */
+function autoRonLateCheck(s: GameState, seat: number, now: number): boolean {
+  if (!isAuto(s, seat)) return false;
+  const k = s.kyoku!;
+  for (let i = 1; i < 4; i++) {
+    const f = (seat + i) % 4; // 下家から順に見る
+    const targets: RonTarget[] = [];
+    if (k.players[f].kakanTile !== null) targets.push({ type: "kakan", from: f });
+    const idx = k.players[f].river.length - 1;
+    if (idx >= 0) targets.push({ type: "discard", from: f, index: idx });
+    for (const target of targets) {
+      const r = evalRon(s, seat, target);
+      if (r) {
+        endWithWins(s, [{ seat, result: r }], f, target, now);
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 function drawFor(s: GameState, seat: number, now: number) {
   const k = s.kyoku!;
   const p = k.players[seat];
@@ -361,6 +386,8 @@ function doDiscard(s: GameState, seat: number, tile: Tile, riichi: boolean, now:
       return;
     }
   }
+  // 次のツモより先に、この打牌で聴牌した人の自動ロンを確認する
+  if (autoRonLateCheck(s, seat, now)) return;
   drawFor(s, seat, now);
 }
 
