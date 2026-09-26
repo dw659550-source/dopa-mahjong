@@ -327,3 +327,32 @@ test("局が終わるたびに牌譜（終局時の盤面）が記録される",
   assert.ok(serials.length >= 4);
   assert.deepEqual(serials, serials.map((_, i) => i + 1));
 });
+
+test("捨てられた後に聴牌しても、その捨て牌がまだロンできるなら自動和了する", () => {
+  let s = freshHumans();
+  s.opts[1].autoHora = true;
+  // 席1はまだ聴牌していない（1p を切ると 2z 単騎の聴牌、役は中）
+  setHand(s, 1, "123m456p789s77z2z1p", "7z");
+  setHand(s, 2, "123m456p789s1344z", "2z");
+  const t = s.kyoku!.players[2].drawn!;
+  s = applyAction(s, { type: "discard", seat: 2, tile: t }, 100).state;
+  assert.equal(s.phase, "playing", "聴牌していないので、この時点では和了しない");
+  const onePin = s.kyoku!.players[1].hand.find((x) => kindOf(x) === 9)!;
+  s = applyAction(s, { type: "discard", seat: 1, tile: onePin }, 200).state;
+  assert.equal(s.phase, "result");
+  assert.equal(s.result!.wins.length, 1);
+  assert.equal(s.result!.wins[0].seat, 1);
+  assert.equal(s.result!.wins[0].fromSeat, 2);
+});
+
+test("自動和了OFFなら、打牌で聴牌しても自動では和了しない", () => {
+  let s = freshHumans();
+  s.opts[1].autoHora = false;
+  setHand(s, 1, "123m456p789s77z2z1p", "7z");
+  setHand(s, 2, "123m456p789s1344z", "2z");
+  s = applyAction(s, { type: "discard", seat: 2, tile: s.kyoku!.players[2].drawn! }, 100).state;
+  const onePin = s.kyoku!.players[1].hand.find((x) => kindOf(x) === 9)!;
+  s = applyAction(s, { type: "discard", seat: 1, tile: onePin }, 200).state;
+  assert.equal(s.phase, "playing");
+  assert.ok(evalRon(s, 1, { type: "discard", from: 2, index: s.kyoku!.players[2].river.length - 1 }), "手動ならロンできる");
+});
