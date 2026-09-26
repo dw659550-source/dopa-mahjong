@@ -61,6 +61,7 @@ function speechAvailable(): boolean {
 function unlockSpeech() {
   if (speechUnlocked || !speechAvailable()) return;
   speechUnlocked = true;
+  loadVoices();
   try {
     const u = new SpeechSynthesisUtterance(" ");
     u.volume = 0;
@@ -70,15 +71,46 @@ function unlockSpeech() {
   }
 }
 
-function japaneseVoice(): SpeechSynthesisVoice | null {
-  const voices = window.speechSynthesis.getVoices();
-  return voices.find((v) => v.lang === "ja-JP") ?? voices.find((v) => v.lang.toLowerCase().startsWith("ja")) ?? null;
+let cachedVoices: SpeechSynthesisVoice[] = [];
+let voicesHooked = false;
+
+/** 声の一覧は読み込みが遅れることがある（Chromeなど）ので、読み込まれたら覚えておく */
+function loadVoices() {
+  if (!speechAvailable()) return;
+  cachedVoices = window.speechSynthesis.getVoices();
+  if (!voicesHooked) {
+    voicesHooked = true;
+    window.speechSynthesis.addEventListener?.("voiceschanged", () => {
+      cachedVoices = window.speechSynthesis.getVoices();
+    });
+  }
 }
+
+function japaneseVoice(): SpeechSynthesisVoice | null {
+  if (cachedVoices.length === 0) loadVoices();
+  const voices = cachedVoices;
+  return voices.find((v) => v.lang === "ja-JP") ?? voices.find((v) => v.lang.toLowerCase().replace("_", "-").startsWith("ja")) ?? null;
+}
+
+/** この端末で日本語の読み上げができそうか（声の一覧が読み込めていない間は「わからない」= null） */
+export function japaneseSpeechSupport(): boolean | null {
+  if (!speechAvailable()) return false;
+  if (cachedVoices.length === 0) loadVoices();
+  if (cachedVoices.length === 0) return null;
+  return japaneseVoice() !== null;
+}
+
+let lastSpeakAt = 0;
 
 /** 日本語で読み上げる（効果音オフのときは鳴らさない） */
 export function speak(text: string): void {
   if (isSoundMuted() || !speechAvailable()) return;
   try {
+    const synth = window.speechSynthesis;
+    // Chromeでは読み上げが「一時停止」や「読み上げ中のまま」で止まり、以降鳴らなくなることがあるので立て直す
+    if (synth.paused) synth.resume();
+    if ((synth.speaking || synth.pending) && Date.now() - lastSpeakAt > 3000) synth.cancel();
+    lastSpeakAt = Date.now();
     const u = new SpeechSynthesisUtterance(text);
     u.lang = "ja-JP";
     const v = japaneseVoice();
@@ -353,6 +385,16 @@ export const SE = {
     sparkle(out, 2.98, 1.4, 26);
     // 読み上げ（音の区切りに合わせる）
     setTimeout(() => speak("役満"), 3100);
+  },
+  /** 対局開始の「ジャーン」（銅鑼＋和音、約2.5秒） */
+  gameStart() {
+    const c = getCtx();
+    if (!c) return;
+    const out = busOut(c);
+    gong(out, 0);
+    [261.63, 392, 523.25, 659.25, 783.99].forEach((f) => brass(out, f, 0.02, 1.1, 0.07));
+    brass(out, 130.81, 0.02, 1.1, 0.12);
+    sparkle(out, 0.05, 0.8, 10);
   },
   fanfare() {
     const notes = [523.25, 659.25, 783.99, 1046.5, 783.99, 1046.5];

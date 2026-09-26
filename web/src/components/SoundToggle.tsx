@@ -9,11 +9,15 @@ export default function SoundToggle() {
   useEffect(() => {
     setMuted(isSoundMuted());
     const off = onMuteChange(setMuted);
+    // スマホは操作をきっかけにしないと音・読み上げが鳴らない。タブを離れて戻ったときなどに
+    // 音が止まっていることがあるので、最初の1回だけでなく操作のたびに準備し直す（軽い処理）
     const unlock = () => unlockAudio();
-    window.addEventListener("pointerdown", unlock, { once: true });
+    window.addEventListener("pointerdown", unlock);
+    window.addEventListener("keydown", unlock);
     return () => {
       off();
       window.removeEventListener("pointerdown", unlock);
+      window.removeEventListener("keydown", unlock);
     };
   }, []);
 
