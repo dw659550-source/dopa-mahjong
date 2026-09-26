@@ -366,7 +366,7 @@ function RoomPage() {
     <main>
       {header}
       {state.phase === "ended" ? (
-        <FinalView state={state} recorded={room.recorded} onBackToRoom={mySeat !== null ? backToRoom : undefined} cpuGame={room.isCpuGame} />
+        <FinalView state={state} recorded={room.recorded} onBackToRoom={mySeat !== null ? backToRoom : undefined} cpuGame={room.isCpuGame} matchId={`${room.code}-${state.startedAt}`} />
       ) : (
         <GameView state={state} mySeat={mySeat} onAction={onAction} connected={connected} />
       )}

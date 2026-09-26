@@ -1,8 +1,10 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
 import { subscribeAllPlayerStats } from "@/lib/rooms";
-import { combineByName, derive, fmtPoints, pct, type PlayerStatsDoc } from "@/lib/statsModel";
+import { combineByName, derive, fmtPoints, type PlayerStatsDoc } from "@/lib/statsModel";
+import StatsDetail from "./StatsDetail";
 
 type SortKey = "totalPoints" | "avgRank" | "avgPoints";
 
@@ -16,7 +18,14 @@ const SORT_LABEL: Record<SortKey, string> = {
  * ランキングの一覧（並べ替え・詳細表示つき）。ランキングページと待機室で使う。
  * highlightNames に含まれる名前は強調表示する（待機室の参加者など）。
  */
-export default function RankingList({ highlightNames = [] }: { highlightNames?: string[] }) {
+export default function RankingList({
+  highlightNames = [],
+  openHistoryInNewTab = false,
+}: {
+  highlightNames?: string[];
+  /** 待機室では部屋から出ないよう、対局履歴を別タブで開く */
+  openHistoryInNewTab?: boolean;
+}) {
   const [sort, setSort] = useState<SortKey>("totalPoints");
   const [docs, setDocs] = useState<PlayerStatsDoc[] | null>(null);
   const [open, setOpen] = useState<string | null>(null);
@@ -79,58 +88,19 @@ export default function RankingList({ highlightNames = [] }: { highlightNames?: 
               </button>
             </div>
             {open === d.name && (
-              <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
-                <Stat label="対戦数" v={`${d.games}戦`} />
-                <Stat label="局数" v={`${d.kyokus}局`} />
-                <Stat label="通算得点" v={fmtPoints(d.totalPoints)} />
-                <Stat label="平均得点" v={fmtPoints(x.avgPoints)} />
-                <Stat label="平均順位" v={x.avgRank.toFixed(2)} />
-                <span />
-                {[d.rank1, d.rank2, d.rank3, d.rank4].map((n, j) => (
-                  <Fragment key={j}>
-                    <Stat label={`${j + 1}位率`} v={pct(x.rankRates[j])} />
-                    <Stat label={`${j + 1}位回数`} v={`${n}回`} />
-                  </Fragment>
-                ))}
-                <Stat label="和了率" v={pct(x.winRate)} />
-                <Stat label="和了回数" v={`${d.wins}回`} />
-                <Stat label="放銃率" v={pct(x.dealinRate)} />
-                <Stat label="放銃回数" v={`${d.dealins}回`} />
-                <Stat label="副露率" v={pct(x.callRate)} />
-                <Stat label="副露した局数" v={`${d.calls}局`} />
-                <Stat label="立直率" v={pct(x.riichiRate)} />
-                <Stat label="立直した局数" v={`${d.riichis}局`} />
-                <Stat label="飛び率" v={pct(x.tobiRate)} />
-                <Stat label="飛び回数" v={`${d.tobi}回`} />
-                <div className="col-span-full mt-1">
-                  <span className="text-dp-muted">役満の和了記録：</span>
-                  {d.yakuman.length === 0 ? (
-                    <span>なし</span>
-                  ) : (
-                    <ul className="mt-1 flex flex-col gap-0.5">
-                      {d.yakuman.map((y, j) => (
-                        <li key={j} className="text-dp-accent">
-                          {y.yaku}
-                          <span className="text-dp-muted text-xs ml-2">{new Date(y.at).toLocaleString("ja-JP")}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
+              <div className="mt-3 flex flex-col gap-2">
+                <StatsDetail d={d} />
+                <Link href={`/player?name=${encodeURIComponent(d.name)}`} className="btn-secondary text-center text-sm"
+                  target={openHistoryInNewTab ? "_blank" : undefined}
+                  rel={openHistoryInNewTab ? "noopener" : undefined}
+                >
+                  対局履歴・牌譜を見る ›
+                </Link>
               </div>
             )}
           </li>
         ))}
       </ol>
-    </div>
-  );
-}
-
-function Stat({ label, v }: { label: string; v: string }) {
-  return (
-    <div className="flex justify-between border-b border-white/5 py-0.5">
-      <span className="text-dp-muted">{label}</span>
-      <span className="font-bold">{v}</span>
     </div>
   );
 }

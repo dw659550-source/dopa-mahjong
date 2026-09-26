@@ -281,6 +281,16 @@ export default function LobbyPage() {
           見る ›
         </Link>
       </section>
+
+      <section className="card p-4 flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-black">自分の戦績</h2>
+          <p className="text-xs text-dp-muted">成績・対局履歴・牌譜（各局の終わった時点の盤面）</p>
+        </div>
+        <Link href={normalizeName(name) ? `/player?name=${encodeURIComponent(normalizeName(name))}` : "/player"} className="btn-secondary">
+          見る ›
+        </Link>
+      </section>
     </main>
   );
 }

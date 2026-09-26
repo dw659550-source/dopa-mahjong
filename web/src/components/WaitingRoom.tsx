@@ -153,7 +153,7 @@ export default function WaitingRoom({
           <span className="text-sm font-bold text-dp-accent">{showRanking ? "－閉じる" : "＋見る"}</span>
         </button>
         {showRanking && (
-          <RankingList highlightNames={room.seats.filter((x) => x && !x.isCpu).map((x) => x!.name)} />
+          <RankingList openHistoryInNewTab highlightNames={room.seats.filter((x) => x && !x.isCpu).map((x) => x!.name)} />
         )}
       </div>
 

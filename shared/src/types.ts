@@ -147,6 +147,26 @@ export interface KyokuResult {
   scoresAfter: number[];
 }
 
+/** 牌譜（局が終わった時点の盤面） */
+export interface KifuPlayer {
+  hand: Tile[];
+  drawn: Tile | null;
+  melds: Meld[];
+  river: { tile: Tile; tsumogiri: boolean; riichi: boolean; calledBy: number | null }[];
+  riichi: boolean;
+}
+
+export interface KifuRecord {
+  /** 対局内の局の通し番号（1〜） */
+  serial: number;
+  roundLabel: string;
+  dealer: number;
+  names: string[];
+  scoresBefore: number[];
+  players: KifuPlayer[];
+  result: KyokuResult;
+}
+
 export interface PlayerGameStats {
   kyokus: number;
   wins: number;
@@ -214,6 +234,8 @@ export interface GameState {
   stats: PlayerGameStats[];
   seed: number;
   kyokuSerial: number;
+  /** 直前に終わった局の牌譜（古い保存データには無い） */
+  lastKifu?: KifuRecord | null;
   events: GameEvent[];
   eventSeq: number;
   startedAt: number;
