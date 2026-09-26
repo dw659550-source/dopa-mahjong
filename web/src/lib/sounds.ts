@@ -132,6 +132,124 @@ function click(start: number, peak: number, cutoff: number) {
   src.start(c.currentTime + start);
 }
 
+// ---------------------------------------------------------------- 役満用（豪華な音）
+
+/** 大きな音を重ねても割れないよう、役満の音はまとめて圧縮してから出す */
+function busOut(c: AudioContext): AudioNode {
+  const comp = c.createDynamicsCompressor();
+  comp.threshold.value = -14;
+  comp.ratio.value = 6;
+  comp.attack.value = 0.003;
+  comp.release.value = 0.25;
+  const master = c.createGain();
+  master.gain.value = 0.6;
+  comp.connect(master);
+  master.connect(c.destination);
+  return comp;
+}
+
+/** 金管楽器風の音（少しずらした2本のノコギリ波＋明るさが変化するフィルター＋ビブラート） */
+function brass(out: AudioNode, freq: number, start: number, dur: number, peak = 0.12) {
+  const c = getCtx();
+  if (!c) return;
+  const t0 = c.currentTime + start;
+  const gain = c.createGain();
+  gain.gain.setValueAtTime(0, t0);
+  gain.gain.linearRampToValueAtTime(peak, t0 + 0.03);
+  gain.gain.setValueAtTime(peak * 0.85, t0 + Math.max(0.05, dur - 0.12));
+  gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  const filter = c.createBiquadFilter();
+  filter.type = "lowpass";
+  filter.Q.value = 2;
+  filter.frequency.setValueAtTime(freq * 1.5, t0);
+  filter.frequency.linearRampToValueAtTime(freq * 6, t0 + 0.06);
+  filter.frequency.exponentialRampToValueAtTime(freq * 3, t0 + dur);
+  filter.connect(gain);
+  gain.connect(out);
+  // 長い音にはビブラート
+  const lfo = c.createOscillator();
+  const lfoGain = c.createGain();
+  lfo.frequency.value = 5.5;
+  lfoGain.gain.value = dur > 0.4 ? freq * 0.008 : 0;
+  lfo.connect(lfoGain);
+  for (const detune of [-7, 7]) {
+    const o = c.createOscillator();
+    o.type = "sawtooth";
+    o.frequency.setValueAtTime(freq, t0);
+    o.detune.value = detune;
+    lfoGain.connect(o.frequency);
+    o.connect(filter);
+    o.start(t0);
+    o.stop(t0 + dur + 0.05);
+  }
+  lfo.start(t0);
+  lfo.stop(t0 + dur + 0.05);
+}
+
+/** 銅鑼（ドラ）のような低い響き */
+function gong(out: AudioNode, start: number) {
+  const c = getCtx();
+  if (!c) return;
+  const t0 = c.currentTime + start;
+  for (const [f, p, d] of [
+    [82, 0.5, 2.8],
+    [123, 0.25, 2.2],
+    [197, 0.14, 1.6],
+    [311, 0.07, 1.2],
+  ] as const) {
+    const o = c.createOscillator();
+    const g = c.createGain();
+    o.type = "sine";
+    o.frequency.setValueAtTime(f * 1.04, t0);
+    o.frequency.exponentialRampToValueAtTime(f, t0 + 0.4);
+    g.gain.setValueAtTime(0, t0);
+    g.gain.linearRampToValueAtTime(p, t0 + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + d);
+    o.connect(g);
+    g.connect(out);
+    o.start(t0);
+    o.stop(t0 + d + 0.05);
+  }
+  // 打った瞬間の「ジャーン」という金属的な雑音
+  const len = Math.floor(c.sampleRate * 1.2);
+  const buf = c.createBuffer(1, len, c.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3);
+  const src = c.createBufferSource();
+  src.buffer = buf;
+  const bp = c.createBiquadFilter();
+  bp.type = "bandpass";
+  bp.frequency.value = 2400;
+  bp.Q.value = 0.7;
+  const g = c.createGain();
+  g.gain.value = 0.35;
+  src.connect(bp);
+  bp.connect(g);
+  g.connect(out);
+  src.start(t0);
+}
+
+/** きらきらした高い音をばらまく */
+function sparkle(out: AudioNode, start: number, dur: number, count: number) {
+  const c = getCtx();
+  if (!c) return;
+  const scale = [2093, 2349.3, 2637, 3136, 3520, 4186];
+  for (let i = 0; i < count; i++) {
+    const t0 = c.currentTime + start + Math.random() * dur;
+    const o = c.createOscillator();
+    const g = c.createGain();
+    o.type = "sine";
+    o.frequency.value = scale[Math.floor(Math.random() * scale.length)];
+    g.gain.setValueAtTime(0, t0);
+    g.gain.linearRampToValueAtTime(0.05, t0 + 0.005);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.35);
+    o.connect(g);
+    g.connect(out);
+    o.start(t0);
+    o.stop(t0 + 0.4);
+  }
+}
+
 export const SE = {
   /** 自分の打牌 */
   discard() {
@@ -201,6 +319,40 @@ export const SE = {
   },
   error() {
     tone(200, 0, 0.18, "sawtooth", 0.12);
+  },
+  /** 役満（約4秒の豪華なファンファーレ） */
+  yakuman() {
+    const c = getCtx();
+    if (!c) return;
+    const out = busOut(c);
+    // 1. 銅鑼＋駆け上がり
+    gong(out, 0);
+    [261.63, 329.63, 392, 523.25, 659.25, 783.99, 1046.5, 1318.5, 1568, 2093].forEach((f, i) =>
+      tone(f, 0.05 + i * 0.035, 0.18, "triangle", 0.07),
+    );
+    // 2. 金管のファンファーレ「タタタ・ターン」（C）→「タタタ・ターン」（D）
+    const C = [523.25, 659.25, 783.99];
+    const D = [587.33, 739.99, 880];
+    const hit = (chord: number[], t: number, d: number, p = 0.09) => chord.forEach((f) => brass(out, f, t, d, p));
+    hit(C, 0.5, 0.11);
+    hit(C, 0.64, 0.11);
+    hit(C, 0.78, 0.11);
+    hit(C, 0.92, 0.42);
+    hit(D, 1.4, 0.11);
+    hit(D, 1.54, 0.11);
+    hit(D, 1.68, 0.11);
+    hit(D, 1.82, 0.42);
+    // 3. 最後に大きな和音（E♭→F→G と上がって、Cで締める）
+    hit([622.25, 783.99, 932.33], 2.3, 0.2);
+    hit([698.46, 880, 1046.5], 2.52, 0.2);
+    hit([783.99, 987.77, 1174.66], 2.74, 0.2);
+    hit([523.25, 659.25, 783.99, 1046.5], 2.98, 1.5, 0.1);
+    brass(out, 130.81, 2.98, 1.5, 0.16); // 低音
+    brass(out, 261.63, 2.98, 1.5, 0.1);
+    gong(out, 2.98);
+    sparkle(out, 2.98, 1.4, 26);
+    // 読み上げ（音の区切りに合わせる）
+    setTimeout(() => speak("役満"), 3100);
   },
   fanfare() {
     const notes = [523.25, 659.25, 783.99, 1046.5, 783.99, 1046.5];
