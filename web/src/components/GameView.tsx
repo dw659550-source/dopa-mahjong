@@ -210,7 +210,7 @@ function DiscardTimer({ state, seat, label, labelClass }: { state: GameState; se
   }, []);
   const p = state.kyoku?.players[seat];
   const deadline = discardDeadline(state, seat, DISCARD_TIMEOUT_MS, AUTO_TSUMOGIRI_MS);
-  const total = p && (p.riichi > 0 || state.opts[seat].tsumogiri) && p.drawn !== null ? AUTO_TSUMOGIRI_MS : DISCARD_TIMEOUT_MS;
+  const total = p && p.riichi > 0 && p.drawn !== null ? AUTO_TSUMOGIRI_MS : DISCARD_TIMEOUT_MS;
   const remain = deadline === null ? 0 : Math.max(0, deadline - now);
   const secs = Math.ceil(remain / 1000);
   useEffect(() => {
@@ -305,8 +305,8 @@ export default function GameView({ state, mySeat, onAction, connected }: Props) 
   const rons = useMemo(() => (playing && mySeat !== null ? ronOptions(state, mySeat) : []), [state, mySeat, playing]);
   const canTsumo = useMemo(() => (playing && mySeat !== null ? !!evalTsumo(state, mySeat) : false), [state, mySeat, playing]);
   const calls = useMemo(
-    () => (playing && mySeat !== null && !opts?.noCall && !opts?.tsumogiri ? callOptions(state, mySeat) : []),
-    [state, mySeat, playing, opts?.noCall, opts?.tsumogiri],
+    () => (playing && mySeat !== null && !opts?.noCall ? callOptions(state, mySeat) : []),
+    [state, mySeat, playing, opts?.noCall],
   );
   const ankans = useMemo(() => (playing && mySeat !== null ? ankanOptions(state, mySeat) : []), [state, mySeat, playing]);
   const kakans = useMemo(() => (playing && mySeat !== null ? kakanOptions(state, mySeat) : []), [state, mySeat, playing]);
@@ -674,7 +674,6 @@ export default function GameView({ state, mySeat, onAction, connected }: Props) 
               [
                 ["autoHora", "自動和了"],
                 ["noCall", "鳴かない"],
-                ["tsumogiri", "ツモ切り"],
               ] as const
             ).map(([key, label]) => (
               <button
