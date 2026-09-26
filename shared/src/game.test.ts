@@ -356,3 +356,21 @@ test("自動和了OFFなら、打牌で聴牌しても自動では和了しな�
   assert.equal(s.phase, "playing");
   assert.ok(evalRon(s, 1, { type: "discard", from: 2, index: s.kyoku!.players[2].river.length - 1 }), "手動ならロンできる");
 });
+
+test("一荘戦は北4局まで続く（飛びがなければ）", () => {
+  for (const seed of [11, 12, 13]) {
+    let s = createGame(cpuSeats("weak"), { ...DEFAULT_RULES, length: "issou" }, seed, 0);
+    let now = 0;
+    let maxIdx = 0;
+    for (let i = 0; i < 400000 && s.phase !== "ended"; i++) {
+      now += 300;
+      s = applyAction(s, { type: "tick" }, now).state;
+      maxIdx = Math.max(maxIdx, s.roundWind * 4 + s.kyokuNum);
+      assert.equal(totalPoints(s), 100000);
+    }
+    assert.equal(s.phase, "ended");
+    const tobi = s.scores.some((x) => x < 0);
+    if (!tobi) assert.equal(maxIdx, 15, `seed ${seed}: 北4局まで行っていない`);
+    assert.ok(maxIdx <= 15);
+  }
+});

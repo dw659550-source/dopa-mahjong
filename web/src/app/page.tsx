@@ -287,7 +287,7 @@ export default function LobbyPage() {
       <section className="card p-4 flex items-center justify-between">
         <div>
           <h2 className="text-lg font-black">ランキング</h2>
-          <p className="text-xs text-dp-muted">東風戦・東南戦を合計して集計しています</p>
+          <p className="text-xs text-dp-muted">東風戦・東南戦・一荘戦を合計して集計しています</p>
         </div>
         <Link href="/ranking" className="btn-secondary">
           見る ›

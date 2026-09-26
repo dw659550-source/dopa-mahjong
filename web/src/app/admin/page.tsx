@@ -12,7 +12,7 @@ import {
   type MatchDoc,
   type PlayerStatsDoc,
 } from "@/lib/statsModel";
-import type { Rules } from "@dopa/shared";
+import { GAME_LENGTH_LABEL, type GameLength, type Rules } from "@dopa/shared";
 
 const TOKEN_KEY = "dopa_admin_token";
 
@@ -301,7 +301,7 @@ function MatchesTab({ api, flash }: { api: Api; flash: (m: string) => void }) {
         <div key={m.id} className={`card p-3 flex flex-col gap-1 text-sm ${m.excluded ? "opacity-60" : ""}`}>
           <div className="flex items-center justify-between">
             <span className="font-bold">
-              {m.mode === "tonpu" ? "東風戦" : "東南戦"}・{fmtTime(m.endedAt)}
+              {GAME_LENGTH_LABEL[m.mode] ?? m.mode}・{fmtTime(m.endedAt)}
               {m.cpuGame && <span className="ml-2 text-xs text-dp-muted">CPU戦</span>}
               {m.excluded && <span className="ml-2 text-dp-bad">除外中</span>}
             </span>
@@ -335,18 +335,18 @@ function MatchesTab({ api, flash }: { api: Api; flash: (m: string) => void }) {
 }
 
 function PlayersTab({ api, flash }: { api: Api; flash: (m: string) => void }) {
-  const [mode, setMode] = useState<"tonpu" | "hanchan">("tonpu");
+  const [mode, setMode] = useState<GameLength>("tonpu");
   const { data, error, reload } = useLoader(() => api<PlayerStatsDoc[]>("listPlayers", { mode }), [api, mode]);
   const [editing, setEditing] = useState<PlayerStatsDoc | null>(null);
   const [form, setForm] = useState<Record<string, string>>({});
   const [mergeFrom, setMergeFrom] = useState("");
   const [mergeTo, setMergeTo] = useState("");
-  // 統合は東風・東南の両方に対して行うので、どちらかに戦績がある名前をすべて候補にする
+  // 統合はすべての対局の種類に対して行うので、どれかに戦績がある名前をすべて候補にする
   const names = useLoader(async () => {
-    const [a, b] = await Promise.all(
-      (["tonpu", "hanchan"] as const).map((m) => api<PlayerStatsDoc[]>("listPlayers", { mode: m })),
+    const lists = await Promise.all(
+      (["tonpu", "hanchan", "issou"] as const).map((m) => api<PlayerStatsDoc[]>("listPlayers", { mode: m })),
     );
-    return Array.from(new Set([...a, ...b].map((p) => p.name))).sort((x, y) => x.localeCompare(y, "ja"));
+    return Array.from(new Set(lists.flat().map((p) => p.name))).sort((x, y) => x.localeCompare(y, "ja"));
   }, [api]);
   const nameOptions = names.data ?? [];
 
@@ -358,9 +358,9 @@ function PlayersTab({ api, flash }: { api: Api; flash: (m: string) => void }) {
   return (
     <div className="flex flex-col gap-2">
       <div className="flex gap-1.5 items-center">
-        {(["tonpu", "hanchan"] as const).map((m) => (
+        {(["tonpu", "hanchan", "issou"] as const).map((m) => (
           <button key={m} className={mode === m ? "chip-on" : "chip-off"} onClick={() => setMode(m)}>
-            {m === "tonpu" ? "東風戦" : "東南戦"}
+            {GAME_LENGTH_LABEL[m]}
           </button>
         ))}
         <button

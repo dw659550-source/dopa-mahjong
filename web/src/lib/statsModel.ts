@@ -231,7 +231,7 @@ export function fmtPoints(x: number): string {
 }
 
 /**
- * 東風戦・東南戦の戦績を名前ごとに合計する。
+ * 東風戦・東南戦・一荘戦の戦績を名前ごとに合計する。
  * どちらかでランキング除外されている名前は、合計のランキングからも除外する。
  */
 export function combineByName(docs: PlayerStatsDoc[]): PlayerStatsDoc[] {

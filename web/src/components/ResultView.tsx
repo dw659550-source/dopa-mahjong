@@ -1,12 +1,29 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { kindOf, type GameState, type Tile as TileId, type WinDetail } from "@dopa/shared";
+import { kindOf, removeTiles, toCounts, waitingKinds, type GameState, type Tile as TileId, type WinDetail } from "@dopa/shared";
 import Tile from "./Tile";
 import { serverNow } from "@/lib/clock";
 
 function sortTiles(t: TileId[]): TileId[] {
   return t.slice().sort((a, b) => kindOf(a) - kindOf(b) || a - b);
+}
+
+/** 和了した手の待ち（和了牌を除いた手牌で待っていた牌の種類） */
+function Waits({ w, aka }: { w: WinDetail; aka: boolean }) {
+  const base = removeTiles(w.hand, [w.winTile]);
+  const kinds = waitingKinds(toCounts(base), w.melds.length);
+  if (kinds.length === 0) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-1 text-sm">
+      <span className="text-dp-muted mr-1">待ち</span>
+      {kinds.map((kd) => (
+        // 表示用に、その種類の赤でない牌を使う
+        <Tile key={kd} tile={kd * 4 + 1} aka={aka} size="xs" highlight={kd === kindOf(w.winTile) ? "win" : null} />
+      ))}
+      <span className="text-xs text-dp-muted ml-1">{kinds.length}種</span>
+    </div>
+  );
 }
 
 /** 和了の内訳（和了画面と牌譜で使う） */
@@ -36,6 +53,7 @@ export function WinBlock({ w, names, aka }: { w: WinDetail; names: string[]; aka
           </span>
         ))}
       </div>
+      <Waits w={w} aka={aka} />
       <ul className="grid grid-cols-2 gap-x-4 text-sm">
         {w.yaku.map((y, i) => (
           <li key={i} className="flex justify-between border-b border-white/5 py-0.5">

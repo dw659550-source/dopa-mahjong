@@ -40,6 +40,24 @@ interface Props {
   connected: boolean[];
 }
 
+const RIGHT_CLICK_KEY = "dopa_right_click_tsumogiri";
+
+function loadRightClickSetting(): boolean {
+  try {
+    return window.localStorage.getItem(RIGHT_CLICK_KEY) !== "0";
+  } catch {
+    return true;
+  }
+}
+
+function saveRightClickSetting(on: boolean) {
+  try {
+    window.localStorage.setItem(RIGHT_CLICK_KEY, on ? "1" : "0");
+  } catch {
+    // 保存できなくても続行
+  }
+}
+
 function sortHand(tiles: TileId[]): TileId[] {
   return tiles.slice().sort((a, b) => kindOf(a) - kindOf(b) || a - b);
 }
@@ -390,6 +408,34 @@ export default function GameView({ state, mySeat, onAction, connected }: Props) 
     prevDrawn.current = myDrawn;
   }, [myDrawn, playing]);
 
+  // 右クリックでツモ切り（マウス操作のときだけ。設定はこの端末に保存）
+  const [rightClick, setRightClick] = useState(true);
+  const [finePointer, setFinePointer] = useState(false);
+  useEffect(() => {
+    setRightClick(loadRightClickSetting());
+    setFinePointer(typeof window !== "undefined" && window.matchMedia?.("(pointer: fine)").matches);
+  }, []);
+  const tsumogiriRef = useRef<() => void>(() => undefined);
+  useEffect(() => {
+    if (spectator || !rightClick) return;
+    let lastPointer = "mouse";
+    const onPointer = (e: PointerEvent) => {
+      lastPointer = e.pointerType;
+    };
+    const onContext = (e: MouseEvent) => {
+      // スマホの長押しでは反応させない（誤ってツモ切りしないように）
+      if (lastPointer !== "mouse") return;
+      e.preventDefault();
+      tsumogiriRef.current();
+    };
+    window.addEventListener("pointerdown", onPointer, true);
+    window.addEventListener("contextmenu", onContext);
+    return () => {
+      window.removeEventListener("pointerdown", onPointer, true);
+      window.removeEventListener("contextmenu", onContext);
+    };
+  }, [spectator, rightClick]);
+
   if (!k) return null;
 
   const act = (a: Action) => {
@@ -410,6 +456,11 @@ export default function GameView({ state, mySeat, onAction, connected }: Props) 
       return;
     }
     onAction({ type: "discard", seat: mySeat, tile: t });
+  };
+
+  tsumogiriRef.current = () => {
+    if (!playing || !me || me.drawn === null || !me.mustDiscard) return;
+    discard(me.drawn);
   };
 
   const doRon = (t: RonTarget) => mySeat !== null && act({ type: "ron", seat: mySeat, target: t });
@@ -634,6 +685,20 @@ export default function GameView({ state, mySeat, onAction, connected }: Props) 
                 {label} {opts![key] ? "ON" : "OFF"}
               </button>
             ))}
+            {finePointer && (
+              <button
+                className={`${rightClick ? "chip-on" : "chip-off"} !px-2.5 !py-1 !text-xs`}
+                title="画面のどこでも右クリックすると、ツモ牌を切ります"
+                onClick={() => {
+                  SE.button();
+                  const v = !rightClick;
+                  setRightClick(v);
+                  saveRightClickSetting(v);
+                }}
+              >
+                右クリックでツモ切り {rightClick ? "ON" : "OFF"}
+              </button>
+            )}
           </div>
         </div>
       )}
