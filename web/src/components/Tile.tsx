@@ -2,7 +2,7 @@
 
 import { isRed, kindName, kindOf, type Kind, type Tile as TileId } from "@dopa/shared";
 
-export type TileSize = "xs" | "sm" | "md" | "lg";
+export type TileSize = "2xs" | "xs" | "sm" | "md" | "lg";
 
 interface Props {
   tile: TileId | null; // null = 裏向き
