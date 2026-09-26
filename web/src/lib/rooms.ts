@@ -126,12 +126,57 @@ export async function heartbeat(code: string, playerId: string, name: string): P
   await setDoc(doc(db, ROOMS, code, "presence", playerId), { lastSeenAt: serverNow(), name });
 }
 
+// ------------------------------------------------------------ 放置ルームの自動終了
+
+/** 動きがなく、参加者が誰も接続していない状態がこれだけ続いたルームは終了扱いにする */
+export const ABANDON_MS = 10 * 60 * 1000;
+const cleanupTried = new Set<string>();
+
+/**
+ * 放置されたルーム（待機中・対局中）を終了扱いにする。ロビーを開いた人のブラウザが、見つけたときに行う。
+ * 対局中だったものは戦績に記録しない（最後まで打っていないため）。
+ */
+async function closeIfAbandoned(code: string): Promise<void> {
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(roomRef(code));
+    if (!snap.exists()) return;
+    const room = snap.data() as RoomDoc;
+    if (room.status !== "waiting" && room.status !== "playing") return;
+    const now = serverNow();
+    if (now - room.updatedAt < ABANDON_MS) return;
+    const seats = room.status === "playing" ? room.gameSeats ?? [] : room.seats;
+    for (const seat of seats) {
+      if (!seat || seat.isCpu || !seat.playerId) continue;
+      const p = await tx.get(doc(db, ROOMS, code, "presence", seat.playerId));
+      if (p.exists() && now - (p.data() as PresenceDoc).lastSeenAt < ABANDON_MS) return; // まだ誰かいる
+    }
+    tx.update(roomRef(code), {
+      status: "aborted",
+      abortedReason:
+        room.status === "playing"
+          ? "長い時間だれも接続していなかったため、対局を終了しました（戦績には記録されません）"
+          : "長い時間だれもいなかったため、ルームを閉じました",
+      updatedAt: now,
+    });
+  });
+}
+
+function cleanupAbandoned(rooms: RoomDoc[]) {
+  const now = serverNow();
+  for (const r of rooms) {
+    if (now - r.updatedAt < ABANDON_MS || cleanupTried.has(r.code)) continue;
+    cleanupTried.add(r.code);
+    void closeIfAbandoned(r.code).catch(() => undefined);
+  }
+}
+
 export function subscribePlayingRooms(cb: (rooms: RoomDoc[]) => void) {
   const q = query(collection(db, ROOMS), where("status", "==", "playing"), fsLimit(50));
   return onSnapshot(q, (snap) => {
     const now = serverNow();
-    const rooms = snap.docs
-      .map((d) => d.data() as RoomDoc)
+    const all = snap.docs.map((d) => d.data() as RoomDoc);
+    cleanupAbandoned(all);
+    const rooms = all
       .filter((r) => now - r.updatedAt < 30 * 60 * 1000)
       .sort((a, b) => b.updatedAt - a.updatedAt);
     cb(rooms);
@@ -143,8 +188,9 @@ export function subscribeWaitingRooms(cb: (rooms: RoomDoc[]) => void) {
   const q = query(collection(db, ROOMS), where("status", "==", "waiting"), fsLimit(50));
   return onSnapshot(q, (snap) => {
     const now = serverNow();
-    const rooms = snap.docs
-      .map((d) => d.data() as RoomDoc)
+    const all = snap.docs.map((d) => d.data() as RoomDoc);
+    cleanupAbandoned(all);
+    const rooms = all
       .filter((r) => !r.isCpuGame && now - r.updatedAt < 2 * 60 * 60 * 1000)
       .sort((a, b) => b.updatedAt - a.updatedAt);
     cb(rooms);

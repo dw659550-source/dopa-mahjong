@@ -21,7 +21,7 @@ export const DEFAULT_RULES: Rules = {
 /** 打牌の制限時間 */
 export const DISCARD_TIMEOUT_MS = 10_000;
 /** 立直後・ツモ切りモード時の自動ツモ切りまでの時間 */
-export const AUTO_TSUMOGIRI_MS = 1_500;
+export const AUTO_TSUMOGIRI_MS = 1_000;
 /** 山切れ後、全員の打牌が終わってから流局するまでの猶予 */
 export const EXHAUST_GRACE_MS = 3_000;
 /** 和了・流局画面の表示時間（全員がOKを押せば早く進む） */

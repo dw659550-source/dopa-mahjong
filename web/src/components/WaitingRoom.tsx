@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { CpuLevel, Rules } from "@dopa/shared";
 import RulesForm, { CPU_LEVEL_LABEL, rulesText } from "./RulesForm";
 import RankingList from "./RankingList";
@@ -52,7 +52,10 @@ export default function WaitingRoom({
       <div className="card p-4 text-center">
         <p className="text-sm text-dp-muted">ルームコード</p>
         <p className="text-5xl font-black tracking-[0.3em] text-dp-accent">{room.code}</p>
-        <p className="text-xs text-dp-muted mt-1">このコードを友だちに伝えて、ロビーの「参加する」から入ってもらってください</p>
+        <p className="text-xs text-dp-muted mt-1">
+          下のボタンで招待リンクを送るか、このコードを伝えてロビーの「参加する」から入ってもらってください
+        </p>
+        <InviteButtons code={room.code} />
       </div>
 
       {room.lastFinal && room.lastFinal.length > 0 && (
@@ -180,6 +183,48 @@ export default function WaitingRoom({
           <p className="flex-1 text-center text-sm text-dp-muted self-center">ホストが開始するのを待っています…</p>
         )}
       </div>
+    </div>
+  );
+}
+
+/** 招待リンクのコピー・共有。リンクを開くと、そのままこのルームに入室する（名前が未入力なら入力画面） */
+function InviteButtons({ code }: { code: string }) {
+  const [copied, setCopied] = useState(false);
+  const [canShare, setCanShare] = useState(false);
+  useEffect(() => setCanShare(typeof navigator !== "undefined" && typeof navigator.share === "function"), []);
+  const url = () => `${location.origin}/room/${code}`;
+  const text = `ドパ麻雀のルーム ${code} に参加してね`;
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(url());
+    } catch {
+      // クリップボードが使えない環境では、選択してコピーしてもらう
+      window.prompt("このリンクをコピーしてください", url());
+      return;
+    }
+    SE.button();
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+  const share = async () => {
+    try {
+      await navigator.share({ title: "ドパ麻雀", text, url: url() });
+    } catch {
+      // キャンセルされた場合など。何もしない
+    }
+  };
+
+  return (
+    <div className="mt-3 flex gap-2 justify-center">
+      <button className="btn-secondary px-4 py-2 text-sm" onClick={() => void copy()}>
+        {copied ? "コピーしました" : "招待リンクをコピー"}
+      </button>
+      {canShare && (
+        <button className="btn-secondary px-4 py-2 text-sm" onClick={() => void share()}>
+          共有…
+        </button>
+      )}
     </div>
   );
 }
