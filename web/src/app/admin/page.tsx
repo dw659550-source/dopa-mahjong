@@ -619,7 +619,7 @@ function AccessTab({ api }: { api: Api }) {
   return (
     <div className="flex flex-col gap-3">
       <p className="text-xs text-dp-muted">
-        ロビー・部屋を開いたときの接続元（同じ端末・同じ名前・同じ画面では30分に1回まで記録）。地域はIPアドレスからの推定で、外れることがあります。スマホ回線は大勢で同じIPを共有することがあるので、同じIPでも別人の場合があります。
+        ロビー・部屋を開いたときの接続元（同じ端末・同じ名前では1日1回まで記録。その日に名前を変えるともう1回記録）。地域はIPアドレスからの推定で、外れることがあります。スマホ回線は大勢で同じIPを共有することがあるので、同じIPでも別人の場合があります。
       </p>
       <div className="flex gap-2 flex-wrap items-center">
         <input className="input !w-48 !py-1.5 text-sm" placeholder="名前・IPで絞り込み" value={q} onChange={(e) => setQ(e.target.value)} />
