@@ -1,8 +1,7 @@
 // 接続記録を送る（利用状況の把握・不正チェック用。利用者の同意は運営側で取得済み）。
-// 同じ端末・同じ名前・同じ画面の種類では30分に1回まで。
+// 同じ端末・同じ名前では1日1回まで。
 // 位置情報（GPS）など、ブラウザの許可画面が出る情報は取らない。
-const KEY = "dopa_visit_last";
-const INTERVAL_MS = 30 * 60 * 1000;
+const KEY = "dopa_visit_day";
 
 interface UAData {
   platform?: string;
@@ -43,11 +42,13 @@ async function clientHints(nav: Nav): Promise<Record<string, unknown>> {
 
 export function reportVisit(page: string, playerId: string, name: string): void {
   if (typeof window === "undefined" || !playerId) return;
-  const sig = `${page}:${name}`;
+  // 1日（端末の日付）1回。その日のうちに名前を変えた場合は、もう1回記録する（不正チェックの手がかりになるため）
+  const day = new Date().toLocaleDateString("ja-JP");
   try {
-    const last = JSON.parse(window.localStorage.getItem(KEY) ?? "null") as { at: number; sig: string } | null;
-    if (last && last.sig === sig && Date.now() - last.at < INTERVAL_MS) return;
-    window.localStorage.setItem(KEY, JSON.stringify({ at: Date.now(), sig }));
+    const last = JSON.parse(window.localStorage.getItem(KEY) ?? "null") as { day?: string; names?: string[] } | null;
+    const names = last?.day === day ? last.names ?? [] : [];
+    if (names.includes(name)) return;
+    window.localStorage.setItem(KEY, JSON.stringify({ day, names: [...names, name] }));
   } catch {
     // 保存できない環境では毎回送る
   }
