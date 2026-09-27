@@ -26,6 +26,7 @@ import {
   type RoomDoc,
 } from "@/lib/rooms";
 import { SE } from "@/lib/sounds";
+import { reportVisit } from "@/lib/visit";
 
 /** 進行役（CPU・時間切れ処理）の書き込み間隔の下限 */
 const DRIVER_MIN_INTERVAL_MS = 1000;
@@ -103,6 +104,11 @@ function RoomPage() {
         setJoinError(`入室できませんでした${c ? `（${c}）` : e instanceof Error ? `（${e.message}）` : ""}`);
       });
   }, [code, playerId, name, watch, joined, router]);
+
+  // 接続記録（利用状況の把握・不正チェック用。利用者の同意は運営側で取得済み）
+  useEffect(() => {
+    if (playerId && name && !watch) reportVisit("room", playerId, name);
+  }, [playerId, name, watch]);
 
   const serverState = useMemo(() => parseState(room ?? null), [room]);
   // 送信中は手元で先に反映した状態を表示する（届いたら差し替え）
