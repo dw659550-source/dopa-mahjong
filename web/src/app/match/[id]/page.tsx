@@ -204,7 +204,7 @@ function KyokuBoard({ k }: { k: KifuView }) {
       })}
 
       {r.wins.map((w, i) => (
-        <WinBlock key={i} w={w} names={k.names} aka={aka} />
+        <WinBlock key={i} w={w} names={k.names} aka={aka} nuki={k.players[w.seat]?.nuki ?? []} />
       ))}
       {r.nagashi.length > 0 && <p className="text-center font-bold text-sm">流し満貫：{r.nagashi.map((s) => k.names[s]).join("・")}</p>}
       <p className="text-xs text-dp-muted">河の暗い牌は鳴かれた牌、横向きは立直宣言牌です。</p>

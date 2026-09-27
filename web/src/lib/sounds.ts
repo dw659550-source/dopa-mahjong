@@ -299,15 +299,24 @@ export const SE = {
   pon() {
     tone(520, 0, 0.09, "square", 0.12);
     tone(780, 0.08, 0.14, "square", 0.12);
+    speak("ポン");
   },
   chi() {
     tone(620, 0, 0.08, "square", 0.11);
     tone(620, 0.09, 0.12, "square", 0.11);
+    speak("チー");
   },
   kan() {
     tone(330, 0, 0.12, "sawtooth", 0.1);
     tone(495, 0.1, 0.12, "sawtooth", 0.1);
     tone(660, 0.2, 0.2, "sawtooth", 0.1);
+    speak("カン");
+  },
+  /** 三人麻雀の北抜き */
+  nuki() {
+    tone(620, 0, 0.08, "square", 0.11);
+    tone(930, 0.09, 0.12, "square", 0.11);
+    speak("キタ");
   },
   riichi() {
     tone(880, 0, 0.12, "sine", 0.14);
@@ -320,6 +329,7 @@ export const SE = {
     tone(659.25, 0.2, 0.12, "triangle", 0.3);
     tone(1046.5, 0.3, 0.5, "triangle", 0.32);
     click(0, 0.8, 1500);
+    speak("ロン");
   },
   tsumo() {
     tone(523.25, 0, 0.1, "triangle", 0.3);
@@ -327,6 +337,7 @@ export const SE = {
     tone(783.99, 0.18, 0.1, "triangle", 0.3);
     tone(1046.5, 0.27, 0.12, "triangle", 0.3);
     tone(1318.5, 0.38, 0.5, "triangle", 0.3);
+    speak("ツモ");
   },
   ryukyoku() {
     tone(523.25, 0, 0.25, "sine", 0.18);

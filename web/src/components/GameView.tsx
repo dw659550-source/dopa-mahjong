@@ -400,7 +400,7 @@ export default function GameView({ state, mySeat, onAction, connected }: Props) 
           SE.kan();
           break;
         case "nuki":
-          SE.chi();
+          SE.nuki();
           break;
         case "ron":
         case "tsumo":
