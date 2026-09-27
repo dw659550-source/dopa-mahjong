@@ -11,6 +11,7 @@ import { getLastName, getOrCreatePlayerId, normalizeName, saveName } from "@/lib
 import { activeSeats, createRoom, joinRoom, playersOf, subscribePlayingRooms, subscribeWaitingRooms, type RoomDoc } from "@/lib/rooms";
 import { syncClock } from "@/lib/clock";
 import { SE, unlockAudio } from "@/lib/sounds";
+import { reportVisit } from "@/lib/visit";
 
 export default function LobbyPage() {
   const router = useRouter();
@@ -28,7 +29,11 @@ export default function LobbyPage() {
 
   useEffect(() => {
     setName(getLastName());
-    if (configured) void syncClock(getOrCreatePlayerId());
+    if (configured) {
+      void syncClock(getOrCreatePlayerId());
+      // 接続記録（利用状況の把握・不正チェック用。利用者の同意は運営側で取得済み）
+      reportVisit("lobby", getOrCreatePlayerId(), getLastName());
+    }
   }, [configured]);
 
   useEffect(() => {

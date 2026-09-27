@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import type { DocumentReference, Firestore, Transaction } from "firebase-admin/firestore";
 import { adminDb } from "@/lib/firebaseAdmin";
+import { ACCESS_LOGS, type AccessLog } from "@/lib/accessLog";
 import { checkPassword, issueToken, verifyToken } from "@/lib/adminAuth";
 import { LOGS, appendLog, readChain, verifyAllLogs, writeLog, type AdminLogEntry, type LogContext } from "@/lib/adminLog";
 import {
@@ -102,6 +103,13 @@ const handlers: Record<string, Handler> = {
         };
       })
       .sort((a, b) => b.updatedAt - a.updatedAt);
+  },
+
+  /** 接続記録（新しい順） */
+  async listAccessLogs(db, _ctx, p) {
+    const lim = Math.min(2000, Math.max(1, Number(p.limit ?? 500)));
+    const snap = await db.collection(ACCESS_LOGS).orderBy("at", "desc").limit(lim).get();
+    return snap.docs.map((d) => ({ id: d.id, ...(d.data() as AccessLog) }));
   },
 
   async listMatches(db, _ctx, p) {

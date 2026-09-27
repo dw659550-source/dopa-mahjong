@@ -16,6 +16,7 @@ import {
   type StatsMode,
 } from "@/lib/statsModel";
 import { GAME_LENGTH_LABEL, type GameLength, type Rules } from "@dopa/shared";
+import { describeUserAgent, type AccessLog } from "@/lib/accessLog";
 
 const TOKEN_KEY = "dopa_admin_token";
 
@@ -39,7 +40,7 @@ interface LogRow {
   hash: string;
 }
 
-type Tab = "rooms" | "matches" | "players" | "logs";
+type Tab = "rooms" | "matches" | "players" | "access" | "logs";
 
 function useAdminApi(token: string | null, onUnauthorized: () => void) {
   return useCallback(
@@ -161,6 +162,7 @@ export default function AdminPage() {
             ["rooms", "進行中の対局"],
             ["matches", "対局の記録"],
             ["players", "プレイヤー"],
+            ["access", "接続記録"],
             ["logs", "操作ログ"],
           ] as const
         ).map(([k, label]) => (
@@ -173,6 +175,7 @@ export default function AdminPage() {
       {tab === "rooms" && <RoomsTab api={api} flash={flash} />}
       {tab === "matches" && <MatchesTab api={api} flash={flash} />}
       {tab === "players" && <PlayersTab api={api} flash={flash} />}
+      {tab === "access" && <AccessTab api={api} />}
       {tab === "logs" && <LogsTab api={api} />}
     </main>
   );
@@ -560,6 +563,144 @@ function LogsTab({ api }: { api: Api }) {
                 {JSON.stringify({ ip: l.ip, detail: l.detail, hash: l.hash }, null, 2)}
               </pre>
             )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- 接続記録
+
+type AccessRow = AccessLog & { id: string };
+
+function placeOf(l: AccessLog): string {
+  return [l.country, l.region, l.city].filter(Boolean).join(" ") || "不明";
+}
+
+function deviceOf(l: AccessLog): string {
+  const base = describeUserAgent(l.userAgent);
+  return l.hints?.model ? `${base}（${l.hints.model}）` : base;
+}
+
+/** 名前ごと・IPごとに、もう一方の値の種類を数える */
+function groupDistinct(rows: AccessRow[], key: (r: AccessRow) => string, val: (r: AccessRow) => string) {
+  const map = new Map<string, { vals: Set<string>; count: number; last: number }>();
+  for (const r of rows) {
+    const k = key(r);
+    if (!k) continue;
+    const g = map.get(k) ?? { vals: new Set<string>(), count: 0, last: 0 };
+    const v = val(r);
+    if (v) g.vals.add(v);
+    g.count++;
+    g.last = Math.max(g.last, r.at);
+    map.set(k, g);
+  }
+  return [...map.entries()]
+    .filter(([, g]) => g.vals.size >= 2)
+    .map(([k, g]) => ({ key: k, vals: [...g.vals], count: g.count, last: g.last }))
+    .sort((a, b) => b.vals.length - a.vals.length || b.last - a.last);
+}
+
+function AccessTab({ api }: { api: Api }) {
+  const [limit, setLimit] = useState(500);
+  const { data, error, reload } = useLoader(() => api<AccessRow[]>("listAccessLogs", { limit }), [api, limit]);
+  const [q, setQ] = useState("");
+  const [open, setOpen] = useState<string | null>(null);
+  const rows = (data ?? []).filter((r) => {
+    if (!q.trim()) return true;
+    const t = q.trim();
+    return r.name.includes(t) || r.ip.includes(t) || r.playerId.includes(t);
+  });
+  const sameIp = groupDistinct(data ?? [], (r) => r.ip, (r) => r.name);
+  const sameName = groupDistinct(data ?? [], (r) => r.name, (r) => r.ip);
+  const sameDevice = groupDistinct(data ?? [], (r) => r.playerId, (r) => r.name);
+
+  return (
+    <div className="flex flex-col gap-3">
+      <p className="text-xs text-dp-muted">
+        ロビー・部屋を開いたときの接続元（同じ端末・同じ名前・同じ画面では30分に1回まで記録）。地域はIPアドレスからの推定で、外れることがあります。スマホ回線は大勢で同じIPを共有することがあるので、同じIPでも別人の場合があります。
+      </p>
+      <div className="flex gap-2 flex-wrap items-center">
+        <input className="input !w-48 !py-1.5 text-sm" placeholder="名前・IPで絞り込み" value={q} onChange={(e) => setQ(e.target.value)} />
+        <select className="input !w-auto !py-1.5 text-sm" value={limit} onChange={(e) => setLimit(Number(e.target.value))}>
+          {[200, 500, 1000, 2000].map((n) => (
+            <option key={n} value={n}>
+              直近{n}件
+            </option>
+          ))}
+        </select>
+        <button className="btn-secondary text-sm" onClick={() => void reload()}>
+          再読み込み
+        </button>
+      </div>
+      {error && <p className="text-dp-bad text-sm">{error}</p>}
+
+      <Suspicious title="同じIPから複数の名前" rows={sameIp} valLabel="名前" onPick={setQ} />
+      <Suspicious title="同じ名前で複数のIP" rows={sameName} valLabel="IP" onPick={setQ} />
+      <Suspicious title="同じ端末（ブラウザ）で複数の名前" rows={sameDevice} valLabel="名前" onPick={setQ} />
+
+      <div className="flex flex-col gap-1">
+        <h3 className="font-black text-sm">記録（{rows.length}件）</h3>
+        {data && rows.length === 0 && <p className="text-dp-muted text-sm">記録がありません。</p>}
+        <ul className="flex flex-col gap-1">
+          {rows.map((r) => (
+            <li key={r.id} className="card px-3 py-2 text-sm">
+              <button className="w-full text-left" onClick={() => setOpen(open === r.id ? null : r.id)}>
+                <div className="flex gap-2 items-baseline flex-wrap">
+                  <span className="text-xs text-dp-muted whitespace-nowrap">{fmtTime(r.at)}</span>
+                  <span className="font-bold">{r.name || "（名前なし）"}</span>
+                  <span className="text-xs text-dp-muted">{r.page}</span>
+                </div>
+                <div className="text-xs flex gap-3 flex-wrap">
+                  <span className="font-mono">{r.ip}</span>
+                  <span>{placeOf(r)}</span>
+                  <span className="text-dp-muted">{deviceOf(r)}</span>
+                </div>
+              </button>
+              {open === r.id && (
+                <pre className="mt-2 text-[11px] bg-black/30 rounded-lg p-2 overflow-x-auto whitespace-pre-wrap break-all">
+                  {JSON.stringify(r, null, 2)}
+                </pre>
+              )}
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  );
+}
+
+function Suspicious({
+  title,
+  rows,
+  valLabel,
+  onPick,
+}: {
+  title: string;
+  rows: { key: string; vals: string[]; count: number; last: number }[];
+  valLabel: string;
+  onPick: (q: string) => void;
+}) {
+  return (
+    <div className="card p-3 flex flex-col gap-1">
+      <h3 className="font-black text-sm">
+        {title}
+        <span className="ml-2 text-xs text-dp-muted font-normal">{rows.length}件（読み込んだ記録の範囲）</span>
+      </h3>
+      {rows.length === 0 && <p className="text-xs text-dp-muted">該当なし</p>}
+      <ul className="flex flex-col gap-1 text-xs">
+        {rows.slice(0, 30).map((g) => (
+          <li key={g.key} className="flex gap-2 items-baseline flex-wrap">
+            <button className="font-mono font-bold underline decoration-white/20" onClick={() => onPick(g.key)}>
+              {g.key.length > 24 ? `${g.key.slice(0, 24)}…` : g.key}
+            </button>
+            <span className="text-dp-muted">
+              {valLabel}
+              {g.vals.length}種：
+            </span>
+            <span className="break-all">{g.vals.join("、")}</span>
+            <span className="text-dp-muted">最終 {fmtTime(g.last)}</span>
           </li>
         ))}
       </ul>
