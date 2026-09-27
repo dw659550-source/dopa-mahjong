@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { kindOf, removeTiles, toCounts, waitingKinds, type GameState, type Tile as TileId, type WinDetail } from "@dopa/shared";
+import { kindOf, removeTiles, toCounts, waitingKinds, type GameState, type Tile as TileId, type Meld, type WinDetail } from "@dopa/shared";
 import Tile from "./Tile";
+import { Melds, NukiTiles } from "./GameView";
 import { serverNow } from "@/lib/clock";
 
 function sortTiles(t: TileId[]): TileId[] {
@@ -26,8 +27,19 @@ function Waits({ w, aka }: { w: WinDetail; aka: boolean }) {
   );
 }
 
+/** 副露（カンを含む）と抜いた北。手牌の右に並べる */
+function OpenParts({ melds, nuki, seat, n, aka }: { melds: Meld[]; nuki: TileId[]; seat: number; n: number; aka: boolean }) {
+  if (melds.length === 0 && nuki.length === 0) return null;
+  return (
+    <span className="flex items-end gap-2 ml-2">
+      <NukiTiles tiles={nuki} aka={aka} size="sm" />
+      <Melds melds={melds} seat={seat} aka={aka} size="sm" n={n} />
+    </span>
+  );
+}
+
 /** 和了の内訳（和了画面と牌譜で使う） */
-export function WinBlock({ w, names, aka }: { w: WinDetail; names: string[]; aka: boolean }) {
+export function WinBlock({ w, names, aka, nuki = [] }: { w: WinDetail; names: string[]; aka: boolean; nuki?: TileId[] }) {
   const concealed = sortTiles(w.hand.filter((t) => t !== w.winTile));
   const winnerName = names[w.seat];
   return (
@@ -45,13 +57,7 @@ export function WinBlock({ w, names, aka }: { w: WinDetail; names: string[]; aka
         ))}
         <span className="w-2" />
         <Tile tile={w.winTile} aka={aka} size="sm" highlight="win" />
-        {w.melds.map((m, i) => (
-          <span key={i} className="flex gap-[1px] ml-2">
-            {m.tiles.map((t, j) => (
-              <Tile key={j} tile={m.type === "ankan" && (j === 0 || j === 3) ? null : t} aka={aka} size="sm" />
-            ))}
-          </span>
-        ))}
+        <OpenParts melds={w.melds} nuki={nuki} seat={w.seat} n={names.length} aka={aka} />
       </div>
       <Waits w={w} aka={aka} />
       <ul className="grid grid-cols-2 gap-x-4 text-sm">
@@ -88,6 +94,11 @@ export default function ResultView({
   const remain = Math.max(0, Math.ceil((state.resultUntil - now) / 1000));
   const acked = mySeat !== null && state.resultAck[mySeat];
   const aka = state.rules.aka;
+  // 局が終わった時点の副露・抜いた北（次の局が始まるまで対局状態に残っている）
+  const openOf = (seat: number) => {
+    const p = state.kyoku?.players[seat];
+    return { melds: p?.melds ?? [], nuki: p?.nuki ?? [] };
+  };
 
   return (
     <div className="fixed inset-0 z-40 bg-black/70 flex items-center justify-center p-2 sm:p-4">
@@ -98,7 +109,7 @@ export default function ResultView({
         </div>
 
         {r.wins.map((w, i) => (
-          <WinBlock key={i} w={w} names={state.seats.map((x) => x.name)} aka={aka} />
+          <WinBlock key={i} w={w} names={state.seats.map((x) => x.name)} aka={aka} nuki={openOf(w.seat).nuki} />
         ))}
 
         {r.kind !== "win" && (
@@ -111,10 +122,11 @@ export default function ResultView({
                 h ? (
                   <div key={seat} className="rounded-xl bg-black/25 p-2">
                     <p className="text-sm font-bold mb-1">{state.seats[seat].name}（聴牌）</p>
-                    <div className="flex flex-wrap gap-[2px]">
+                    <div className="flex flex-wrap items-end gap-[2px]">
                       {sortTiles(h).map((t) => (
                         <Tile key={t} tile={t} aka={aka} size="sm" />
                       ))}
+                      <OpenParts {...openOf(seat)} seat={seat} n={state.seats.length} aka={aka} />
                     </div>
                   </div>
                 ) : null,
@@ -123,10 +135,11 @@ export default function ResultView({
             {r.kind === "abort" &&
               r.revealed.map((h, seat) =>
                 h ? (
-                  <div key={seat} className="flex flex-wrap gap-[2px] justify-center">
+                  <div key={seat} className="flex flex-wrap items-end gap-[2px] justify-center">
                     {sortTiles(h).map((t) => (
                       <Tile key={t} tile={t} aka={aka} size="sm" />
                     ))}
+                    <OpenParts {...openOf(seat)} seat={seat} n={state.seats.length} aka={aka} />
                   </div>
                 ) : null,
               )}
