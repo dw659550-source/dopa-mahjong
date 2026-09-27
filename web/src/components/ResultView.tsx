@@ -148,24 +148,30 @@ export default function ResultView({
           )}
         </div>
 
-        <table className="w-full text-sm">
-          <tbody>
-            {state.seats.map((s, i) => (
-              <tr key={i} className="border-b border-white/5">
-                <td className="py-1 font-bold">{s.name}</td>
-                <td
-                  className={`py-1 text-right font-mono ${
-                    r.deltas[i] > 0 ? "text-dp-accent2" : r.deltas[i] < 0 ? "text-dp-bad" : "text-dp-muted"
-                  }`}
-                >
-                  {r.deltas[i] > 0 ? "+" : ""}
-                  {r.deltas[i].toLocaleString()}
-                </td>
-                <td className="py-1 text-right font-mono">{r.scoresAfter[i].toLocaleString()}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        {/* 点数の動き（例：+3,900　25,000 → 28,900） */}
+        <div className="flex flex-col gap-1">
+          {state.seats.map((s, i) => {
+            const d = r.deltas[i];
+            const after = r.scoresAfter[i];
+            const before = after - d;
+            const tone = d > 0 ? "text-dp-accent2" : d < 0 ? "text-dp-bad" : "text-dp-muted";
+            return (
+              <div
+                key={i}
+                className={`flex items-center gap-2 rounded-lg px-2 py-1.5 ${i === mySeat ? "bg-dp-accent/15 ring-1 ring-dp-accent/40" : "bg-black/20"}`}
+              >
+                <span className="font-bold truncate min-w-0 flex-1">{s.name}</span>
+                <span className={`font-mono font-black w-[4.5rem] text-right ${tone}`}>
+                  {d > 0 ? "+" : d < 0 ? "−" : "±"}
+                  {Math.abs(d).toLocaleString()}
+                </span>
+                <span className="font-mono text-xs text-dp-muted w-[3.4rem] text-right">{before.toLocaleString()}</span>
+                <span className="text-dp-muted text-xs">→</span>
+                <span className={`font-mono font-bold w-[3.6rem] text-right ${d !== 0 ? tone : ""}`}>{after.toLocaleString()}</span>
+              </div>
+            );
+          })}
+        </div>
 
         {mySeat !== null ? (
           <button className="btn-primary" disabled={acked} onClick={onAck}>

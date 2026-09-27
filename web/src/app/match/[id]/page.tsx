@@ -158,10 +158,12 @@ function KyokuBoard({ k }: { k: KifuView }) {
                 {k.names[seat]}
                 {p.riichi && <span className="ml-1.5 text-xs text-dp-accent">立直</span>}
               </span>
-              <span className="font-mono text-xs text-dp-muted">{k.scoresBefore[seat].toLocaleString()}</span>
-              <span className={`font-mono text-xs font-bold w-14 text-right ${delta > 0 ? "text-dp-accent2" : delta < 0 ? "text-dp-bad" : "text-dp-muted"}`}>
-                {delta > 0 ? "+" : ""}
-                {delta.toLocaleString()}
+              <span className={`font-mono text-xs font-bold text-right ${delta > 0 ? "text-dp-accent2" : delta < 0 ? "text-dp-bad" : "text-dp-muted"}`}>
+                {delta > 0 ? "+" : delta < 0 ? "−" : "±"}
+                {Math.abs(delta).toLocaleString()}
+              </span>
+              <span className="font-mono text-xs text-dp-muted">
+                {k.scoresBefore[seat].toLocaleString()} → {(k.scoresBefore[seat] + delta).toLocaleString()}
               </span>
             </div>
             <div className="flex flex-wrap items-end gap-[2px]">
