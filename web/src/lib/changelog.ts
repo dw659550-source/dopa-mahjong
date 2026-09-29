@@ -7,10 +7,6 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
-    date: "2026/9/29",
-    items: ["画面上部に「更新履歴」ボタンを追加"],
-  },
-  {
     date: "2026/9/28",
     items: [
       "流局時の手牌表示にカン・ポンなどの副露を表示（不具合修正）",
