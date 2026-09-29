@@ -123,6 +123,9 @@ export default function LobbyPage() {
       )}
 
       <nav className="flex justify-end gap-2 -mb-2">
+        <Link href="/changelog" className="rounded-full border border-dp-accent/60 px-3 py-1 text-xs font-bold text-dp-accent">
+          更新履歴
+        </Link>
         <Link
           href={normalizeName(name) ? `/player?name=${encodeURIComponent(normalizeName(name))}` : "/player"}
           className="rounded-full border border-dp-accent/60 px-3 py-1 text-xs font-bold text-dp-accent"
