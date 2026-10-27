@@ -62,10 +62,10 @@ export function createGame(seats: SeatInfo[], rules: Rules, seed: number, now: n
   const n = seats.length;
   const s: GameState = {
     version: 1,
-    // 少牌マイティは三人麻雀のみ・東南戦固定。ドパなしは今は少牌マイティのときだけ
+    // 少牌マイティは三人麻雀のみ。ドパなしは今は少牌マイティのときだけ
     rules:
       rules.mighty && n === 3
-        ? { ...rules, players: 3, mighty: true, length: "hanchan", turnBased: !!rules.turnBased }
+        ? { ...rules, players: 3, mighty: true, turnBased: !!rules.turnBased }
         : { ...rules, players: n as 3 | 4, mighty: false, turnBased: false },
     seats,
     connected: seats.map(() => true),

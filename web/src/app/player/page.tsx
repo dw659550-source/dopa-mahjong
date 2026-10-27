@@ -152,7 +152,7 @@ function PlayerView({ name }: { name: string }) {
           <>
             <p className="text-xs text-dp-muted">
               {group === "mighty"
-                ? "少牌マイティ（三人・東南戦）の成績（CPU対戦を除く）"
+                ? "少牌マイティの東風戦・東南戦・一荘戦の合計（CPU対戦を除く）"
                 : `${group === "sanma" ? "三人麻雀" : "四人麻雀"}の東風戦・東南戦・一荘戦の合計（CPU対戦を除く）`}
               {stats.excluded && <span className="ml-2 text-dp-bad">※ランキング対象外</span>}
             </p>

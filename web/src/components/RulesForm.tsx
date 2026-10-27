@@ -67,8 +67,8 @@ export default function RulesForm({
               { v: false, label: "なし" },
               { v: true, label: "あり" },
             ]}
-            // 少牌マイティは東南戦に固定。ドパなしは少牌マイティのときだけ
-            onChange={(v) => onChange({ ...rules, mighty: v, ...(v ? { length: "hanchan" as const } : { turnBased: false }) })}
+            // ドパなしは少牌マイティのときだけ
+            onChange={(v) => onChange({ ...rules, mighty: v, ...(v ? {} : { turnBased: false }) })}
           />
         </>
       )}
@@ -88,8 +88,8 @@ export default function RulesForm({
       )}
       <span className="text-dp-muted">対局</span>
       <Toggle
-        value={mightyOn ? "hanchan" : rules.length}
-        disabled={disabled || mightyOn}
+        value={rules.length}
+        disabled={disabled}
         options={(["tonpu", "hanchan", "issou"] as const).map((v) => ({ v, label: GAME_LENGTH_LABEL[v] }))}
         onChange={(v) => onChange({ ...rules, length: v })}
       />
@@ -132,8 +132,9 @@ export function rulesText(r: Rules): string {
   return [
     ...(r.players === 3 ? ["三人麻雀"] : []),
     ...(r.players === 3 && r.mighty
-      ? ["少牌マイティ", ...(r.turnBased ? ["ドパなし"] : []), GAME_LENGTH_LABEL.hanchan]
-      : [GAME_LENGTH_LABEL[r.length] ?? r.length]),
+      ? ["少牌マイティ", ...(r.turnBased ? ["ドパなし"] : [])]
+      : []),
+    GAME_LENGTH_LABEL[r.length] ?? r.length,
     `喰い断${r.kuitan ? "あり" : "なし"}`,
     `赤ドラ${r.aka ? "あり" : "なし"}`,
   ].join("・");

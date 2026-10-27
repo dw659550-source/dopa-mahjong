@@ -473,9 +473,9 @@ function freshMighty(seed = 5): GameState {
   return s;
 }
 
-test("少牌マイティ: 配牌12枚（＋第1ツモ）、東南戦に固定", () => {
+test("少牌マイティ: 配牌12枚（＋第1ツモ）、対局の長さは選んだとおり", () => {
   const s = freshMighty();
-  assert.equal(s.rules.length, "hanchan");
+  assert.equal(s.rules.length, "tonpu");
   assert.equal(s.rules.mighty, true);
   for (const p of s.kyoku!.players) assert.equal(p.hand.length, 13); // 12枚＋第1ツモ
   // 四人麻雀では少牌マイティにならない
