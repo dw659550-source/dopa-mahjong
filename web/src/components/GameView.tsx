@@ -668,7 +668,7 @@ export default function GameView({ state, mySeat, onAction, connected }: Props) 
                     ? "鳴いた後の1枚を捨ててください"
                     : "捨てる牌をタップ"
                   : passOk
-                    ? "ロン・鳴きを選択（5秒）"
+                    ? `ロン・鳴きを選択（${CALL_WINDOW_MS / 1000}秒）`
                     : turnBased && callWindowOf(state)
                       ? "ロン・鳴きの確認中…"
                       : k.wall.length === 0

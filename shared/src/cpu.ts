@@ -40,8 +40,14 @@ const DELAY: Record<CpuLevel, [number, number]> = {
   strong: [500, 1000],
 };
 
+/**
+ * ドパなしの反応時間。順番に進むので速さは強さに関係しない。待たせないよう短くする
+ * （実際の対局では進行役の書き込みが1秒間隔なので、1手あたり約1秒が下限）
+ */
+const TURN_DELAY: [number, number] = [300, 600];
+
 export function cpuDelayMs(s: GameState, seat: number, salt: number): number {
-  const [lo, hi] = DELAY[s.seats[seat].cpuLevel];
+  const [lo, hi] = s.rules.turnBased ? TURN_DELAY : DELAY[s.seats[seat].cpuLevel];
   return Math.round(lo + (hi - lo) * hashUnit(s.seed, seat, salt, s.kyokuSerial));
 }
 
