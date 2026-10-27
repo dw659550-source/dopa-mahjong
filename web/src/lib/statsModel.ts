@@ -2,10 +2,11 @@
 import { GAME_LENGTH_LABEL, type GameLength, type KifuRecord, type Rules } from "@dopa/shared";
 
 /**
- * 戦績を集計する単位（対局の長さ＋人数）。四人麻雀は "tonpu" など、三人麻雀は "sanma_tonpu" など。
- * 三人麻雀は点数の付き方が違うので、戦績・ランキングは四人麻雀と別に集計する。
+ * 戦績を集計する単位（対局の長さ＋人数）。四人麻雀は "tonpu" など、三人麻雀は "sanma_tonpu" など、
+ * 少牌マイティは "mighty_tonpu" など。点数の付き方が違うので、それぞれ別に集計する。
+ * "mighty" は対局の長さを記録していなかった頃の少牌マイティ（古いデータ用）。
  */
-export type StatsMode = GameLength | `sanma_${GameLength}` | "mighty";
+export type StatsMode = GameLength | `sanma_${GameLength}` | `mighty_${GameLength}` | "mighty";
 
 export const ALL_STATS_MODES: StatsMode[] = [
   "tonpu",
@@ -14,16 +15,23 @@ export const ALL_STATS_MODES: StatsMode[] = [
   "sanma_tonpu",
   "sanma_hanchan",
   "sanma_issou",
+  "mighty_tonpu",
+  "mighty_hanchan",
+  "mighty_issou",
   "mighty",
 ];
 
 export function statsModeOf(rules: Pick<Rules, "length" | "players" | "mighty">): StatsMode {
-  if (rules.players === 3 && rules.mighty) return "mighty";
+  if (rules.players === 3 && rules.mighty) return `mighty_${rules.length}`;
   return rules.players === 3 ? `sanma_${rules.length}` : rules.length;
 }
 
 export function isSanmaMode(mode: string): boolean {
   return mode.startsWith("sanma_");
+}
+
+export function isMightyMode(mode: string): boolean {
+  return mode === "mighty" || mode.startsWith("mighty_");
 }
 
 /** ランキング・マイページで切り替える区分（四人麻雀・三人麻雀・少牌マイティ） */
@@ -36,16 +44,16 @@ export const STATS_GROUPS: { value: StatsGroup; label: string }[] = [
 ];
 
 export function statsGroupOf(mode: string): StatsGroup {
-  if (mode === "mighty") return "mighty";
+  if (isMightyMode(mode)) return "mighty";
   return isSanmaMode(mode) ? "sanma" : "four";
 }
 
-/** 表示名（例：東風戦 / 三人・東南戦 / 少牌マイティ） */
+/** 表示名（例：東風戦 / 三人・東南戦 / 少牌マイティ・東風戦） */
 export function statsModeLabel(mode: string): string {
   if (mode === "mighty") return "少牌マイティ";
-  const len = (isSanmaMode(mode) ? mode.slice(6) : mode) as GameLength;
-  const base = GAME_LENGTH_LABEL[len] ?? len;
-  return isSanmaMode(mode) ? `三人・${base}` : base;
+  const prefix = isSanmaMode(mode) ? "三人・" : isMightyMode(mode) ? "少牌マイティ・" : "";
+  const len = (prefix ? mode.slice(mode.indexOf("_") + 1) : mode) as GameLength;
+  return `${prefix}${GAME_LENGTH_LABEL[len] ?? len}`;
 }
 
 export interface YakumanRecord {
@@ -130,7 +138,7 @@ export interface KifuView extends KifuRecord {
 }
 
 export function parseKifu(d: KifuDoc): KifuView {
-  return { ...(JSON.parse(d.json) as KifuRecord), aka: d.aka, mighty: d.mode === "mighty" };
+  return { ...(JSON.parse(d.json) as KifuRecord), aka: d.aka, mighty: isMightyMode(d.mode) };
 }
 
 export function kifuDocId(matchId: string, serial: number): string {
