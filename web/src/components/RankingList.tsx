@@ -67,7 +67,7 @@ export default function RankingList({
         </div>
         <p className="text-xs text-dp-muted">
           {group === "mighty"
-            ? "少牌マイティ（三人・東南戦）の成績です"
+            ? "少牌マイティの東風戦・東南戦・一荘戦の合計です"
             : "東風戦・東南戦・一荘戦の合計です（四人麻雀・三人麻雀・少牌マイティは別に集計）"}
         </p>
         <div className="flex gap-1.5 flex-wrap items-center">
