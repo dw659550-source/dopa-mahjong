@@ -1,9 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { applyAction, createGame } from "./game.ts";
-import { callOptions, evalRon, legalDiscards, ranking, waitsOf } from "./query.ts";
+import { callOptions, canPass, evalRon, legalDiscards, ranking, waitsOf } from "./query.ts";
 import { parseTiles, kindOf } from "./tiles.ts";
-import { DEFAULT_RULES, type GameState, type SeatInfo, type Rules } from "./types.ts";
+import { CALL_WINDOW_MS, DEFAULT_RULES, TURN_TIMEOUT_MS, type GameState, type SeatInfo, type Rules } from "./types.ts";
 
 function cpuSeats(level: SeatInfo["cpuLevel"] = "normal"): SeatInfo[] {
   return [0, 1, 2, 3].map((i) => ({ name: `CPU${i}`, isCpu: true, cpuLevel: level }));
@@ -526,20 +526,215 @@ for (const level of ["weak", "normal", "strong"] as const) {
     const t0 = Date.now();
     let s = createGame(cpuSeats3(level), { ...DEFAULT_RULES, mighty: true }, 99, 0);
     let now = 0;
-    let wins = 0;
-    let lastSerial = 0;
     for (let i = 0; i < 400000 && s.phase !== "ended"; i++) {
       now += 300;
       s = applyAction(s, { type: "tick" }, now).state;
       const total = s.scores.reduce((a, b) => a + b, 0) + s.kyotaku * 1000;
       assert.equal(total, 105000);
-      if (s.result && s.kyokuSerial !== lastSerial) {
-        lastSerial = s.kyokuSerial;
-        wins += s.result.wins.length;
-      }
     }
     assert.equal(s.phase, "ended");
+    // CPUだけの対局は結果画面をすぐ閉じるので、和了数は対局の成績から数える
+    const wins = s.stats.reduce((a, x) => a + x.wins, 0);
     assert.ok(wins > 0, "一度も和了がない");
     console.log(`  mighty ${level}: ${s.kyokuSerial}局, ${wins}和了, ${Date.now() - t0}ms`);
   });
 }
+
+// ---------------------------------------------------------------- ドパなし（少牌マイティ）
+
+function freshTurn(seed = 5): GameState {
+  const s = createGame(
+    [0, 1, 2].map((i) => ({ name: `P${i}`, isCpu: false, cpuLevel: "normal" as const })),
+    { ...DEFAULT_RULES, mighty: true, turnBased: true },
+    seed,
+    0,
+  );
+  if (s.phase !== "playing") return freshTurn(seed + 1);
+  for (const p of s.kyoku!.players) p.firstTurn = false;
+  return s;
+}
+
+/** 3人の手牌を、同じ牌が重ならないように配る（[手牌, ツモ牌]） */
+function dealTurn(s: GameState, hands: [string, string | null][]) {
+  const parts = hands.flatMap(([h, d]) => [h, d ?? ""]);
+  const all = parseTiles(parts.join(""));
+  let i = 0;
+  const take = (str: string) => {
+    const n = str ? parseTiles(str).length : 0;
+    const out = all.slice(i, i + n);
+    i += n;
+    return out;
+  };
+  hands.forEach(([h, d], seat) => {
+    const p = s.kyoku!.players[seat];
+    const hand = take(h);
+    const drawn = take(d ?? "");
+    p.hand = [...hand, ...drawn];
+    p.drawn = drawn[0] ?? null;
+    p.mustDiscard = drawn.length > 0;
+    p.afterCall = false;
+  });
+}
+
+const tileOf = (s: GameState, seat: number, kind: number) => s.kyoku!.players[seat].hand.find((t) => kindOf(t) === kind)!;
+
+test("ドパなし: 親だけが第1ツモ、ほかは12枚で待つ。少牌マイティ以外では選べない", () => {
+  const s = freshTurn();
+  assert.equal(s.rules.turnBased, true);
+  const k = s.kyoku!;
+  assert.equal(k.players[0].hand.length, 13);
+  assert.ok(k.players[0].drawn !== null && k.players[0].mustDiscard);
+  for (const seat of [1, 2]) {
+    assert.equal(k.players[seat].hand.length, 12);
+    assert.equal(k.players[seat].drawn, null);
+    assert.equal(k.players[seat].mustDiscard, false);
+  }
+  const plain = createGame(cpuSeats3(), { ...DEFAULT_RULES, turnBased: true }, 1, 0);
+  assert.equal(plain.rules.turnBased, false);
+});
+
+test("ドパなし: 自分の手番でなければ打牌できない", () => {
+  const s = freshTurn();
+  const r = applyAction(s, { type: "discard", seat: 1, tile: s.kyoku!.players[1].hand[0] }, 100);
+  assert.ok(r.error);
+});
+
+test("ドパなし: 鳴ける人がいなければ、打牌のあとすぐ次の人がツモる", () => {
+  let s = freshTurn();
+  dealTurn(s, [
+    ["19m123p456p789s1z", "2z"],
+    ["19m19p19s34567z2p", null],
+    ["1s4s7s1p4p7p9p3z5z6z11s", null],
+  ]);
+  s = applyAction(s, { type: "discard", seat: 0, tile: tileOf(s, 0, 28) }, 100).state;
+  const k = s.kyoku!;
+  assert.equal(k.callWindow ?? null, null);
+  assert.ok(k.players[1].drawn !== null && k.players[1].mustDiscard);
+  assert.equal(k.players[2].drawn, null);
+});
+
+function ponSetup(): GameState {
+  const s = freshTurn();
+  // 席2は 2z を2枚持っていてポンできる（和了はできない形）
+  dealTurn(s, [
+    ["19m123p456p789s1z", "2z"],
+    ["19m19p19s34567z2p", null],
+    ["1s4s7s1p4p7p9p22z5z6z", null],
+  ]);
+  return applyAction(s, { type: "discard", seat: 0, tile: tileOf(s, 0, 28) }, 100).state;
+}
+
+test("ドパなし: ポンできる人がいる間は次の人がツモらず、スキップで進む", () => {
+  let s = ponSetup();
+  assert.ok(s.kyoku!.callWindow);
+  assert.equal(s.kyoku!.players[1].drawn, null);
+  assert.ok(callOptions(s, 2).some((o) => o.type === "pon"));
+  assert.ok(canPass(s, 2));
+  assert.ok(!canPass(s, 1));
+  s = applyAction(s, { type: "pass", seat: 2 }, 200).state;
+  assert.equal(s.kyoku!.callWindow, null);
+  assert.ok(s.kyoku!.players[1].drawn !== null);
+});
+
+test("ドパなし: 答えないまま時間が過ぎるとスキップ扱い", () => {
+  let s = ponSetup();
+  s = applyAction(s, { type: "tick" }, 100 + CALL_WINDOW_MS - 10).state;
+  assert.ok(s.kyoku!.callWindow);
+  s = applyAction(s, { type: "tick" }, 100 + CALL_WINDOW_MS + 10).state;
+  assert.equal(s.kyoku!.callWindow, null);
+  assert.ok(s.kyoku!.players[1].drawn !== null);
+});
+
+test("ドパなし: ポンするとその人の手番になり、次はその下家がツモる", () => {
+  let s = ponSetup();
+  const o = callOptions(s, 2).find((x) => x.type === "pon")!;
+  s = applyAction(s, { type: "pon", seat: 2, from: o.from, index: o.index, tiles: o.tiles }, 200).state;
+  let p = s.kyoku!.players[2];
+  assert.equal(p.melds.length, 1);
+  assert.ok(p.mustDiscard && p.afterCall);
+  assert.equal(s.kyoku!.players[1].drawn, null);
+  s = applyAction(s, { type: "discard", seat: 2, tile: legalDiscards(s, 2)[0] }, 300).state;
+  p = s.kyoku!.players[2];
+  assert.ok(!p.mustDiscard);
+  // 鳴ける人がいなければ席0（席2の下家）がツモる
+  if (!s.kyoku!.callWindow) assert.ok(s.kyoku!.players[0].drawn !== null);
+});
+
+test("ドパなし: 打牌の制限時間を過ぎると自動でツモ切り", () => {
+  let s = freshTurn();
+  const drawn = s.kyoku!.players[0].drawn!;
+  s.opts[0].autoHora = false;
+  s = applyAction(s, { type: "tick" }, TURN_TIMEOUT_MS + 10).state;
+  assert.equal(s.kyoku!.players[0].mustDiscard, false);
+  assert.equal(s.kyoku!.players[0].river[0].tile, drawn);
+});
+
+test("ドパなし: ロンできる人が答えるまでポンは成立せず、ロンが優先", () => {
+  const make = () => {
+    const s = freshTurn();
+    s.opts[1].autoHora = false;
+    // 席1：2z（自風の南）でロンできる。席2：2z をポンできる
+    dealTurn(s, [
+      ["19m123p456p789s1z", "2z"],
+      ["123p456p789s11s2z", null],
+      ["1s4s7s1p4p7p9p22z5z6z", null],
+    ]);
+    return applyAction(s, { type: "discard", seat: 0, tile: tileOf(s, 0, 28) }, 100).state;
+  };
+  let s = make();
+  assert.ok(canPass(s, 1));
+  const o = callOptions(s, 2).find((x) => x.type === "pon")!;
+  s = applyAction(s, { type: "pon", seat: 2, from: o.from, index: o.index, tiles: o.tiles }, 200).state;
+  assert.equal(s.kyoku!.players[2].melds.length, 0, "ロンの答えを待たずにポンが成立した");
+  assert.ok(s.kyoku!.callWindow?.claim);
+  const ron = applyAction(s, { type: "ron", seat: 1, target: { type: "discard", from: 0, index: 0 } }, 300).state;
+  assert.equal(ron.phase, "result");
+  assert.equal(ron.result!.wins[0].seat, 1);
+  // ロンせずスキップすると、ポンが成立する（ロンを見逃したのでフリテン）
+  const passed = applyAction(s, { type: "pass", seat: 1 }, 300).state;
+  assert.equal(passed.kyoku!.players[2].melds.length, 1);
+  assert.ok(passed.kyoku!.players[1].tempFuriten);
+});
+
+for (const level of ["weak", "normal", "strong"] as const) {
+  test(`ドパなし: CPU 3人で最後まで対局できる (${level})`, () => {
+    let s = createGame(cpuSeats3(level), { ...DEFAULT_RULES, mighty: true, turnBased: true }, 77, 0);
+    let now = 0;
+    let calls = 0;
+    for (let i = 0; i < 400000 && s.phase !== "ended"; i++) {
+      now += 300;
+      s = applyAction(s, { type: "tick" }, now).state;
+      assert.equal(s.scores.reduce((a, b) => a + b, 0) + s.kyotaku * 1000, 105000);
+      if (s.phase === "playing" && s.kyoku) {
+        // 打牌待ちは常に1人以下（確認中は0人）
+        const turn = s.kyoku.players.filter((p) => p.mustDiscard).length;
+        assert.ok(turn <= 1, `打牌待ちが${turn}人いる`);
+        if (s.kyoku.callWindow) assert.equal(turn, 0);
+        calls = Math.max(calls, ...s.kyoku.players.map((p) => p.melds.filter((m) => m.type === "pon").length));
+      }
+    }
+    assert.equal(s.phase, "ended");
+    const wins = s.stats.reduce((a, x) => a + x.wins, 0);
+    assert.ok(wins > 0, "一度も和了がない");
+    console.log(`  turn ${level}: ${s.kyokuSerial}局, ${wins}和了, ポンあり=${calls > 0}`);
+  });
+}
+
+test("ドパなし: 人（何もしない）＋CPU2人でも時間切れで最後まで進む", () => {
+  let s = createGame(
+    [
+      { name: "P0", isCpu: false, cpuLevel: "normal" as const },
+      { name: "C1", isCpu: true, cpuLevel: "normal" as const },
+      { name: "C2", isCpu: true, cpuLevel: "normal" as const },
+    ],
+    { ...DEFAULT_RULES, mighty: true, turnBased: true },
+    31,
+    0,
+  );
+  let now = 0;
+  for (let i = 0; i < 400000 && s.phase !== "ended"; i++) {
+    now += 500;
+    s = applyAction(s, { type: "tick" }, now).state;
+  }
+  assert.equal(s.phase, "ended");
+});

@@ -9,6 +9,8 @@ import {
   canNuki,
   dealerSeat,
   discardDeadline,
+  discardTimeoutMs,
+  isTurnBased,
   evalRon,
   evalTsumo,
   kakanOptions,
@@ -26,12 +28,13 @@ import { mulberry32, shuffle } from "./rng.ts";
 import { NORTH, isSanmaRemoved, isWind, isYaochu, kindOf, isDragon, type Kind, type Tile } from "./tiles.ts";
 import {
   AUTO_TSUMOGIRI_MS,
-  DISCARD_TIMEOUT_MS,
+  CALL_WINDOW_MS,
   EXHAUST_GRACE_MS,
   RESULT_DISPLAY_MS,
   roundLimits,
   scoreRules,
   type Action,
+  type CallWindow,
   type FinalResult,
   type GameEventType,
   type GameState,
@@ -59,11 +62,11 @@ export function createGame(seats: SeatInfo[], rules: Rules, seed: number, now: n
   const n = seats.length;
   const s: GameState = {
     version: 1,
-    // 少牌マイティは三人麻雀のみ・東南戦固定
+    // 少牌マイティは三人麻雀のみ・東南戦固定。ドパなしは今は少牌マイティのときだけ
     rules:
       rules.mighty && n === 3
-        ? { ...rules, players: 3, mighty: true, length: "hanchan" }
-        : { ...rules, players: n as 3 | 4, mighty: false },
+        ? { ...rules, players: 3, mighty: true, length: "hanchan", turnBased: !!rules.turnBased }
+        : { ...rules, players: n as 3 | 4, mighty: false, turnBased: false },
     seats,
     connected: seats.map(() => true),
     opts: seats.map(() => ({ autoHora: true, noCall: false, tsumogiri: false })),
@@ -156,6 +159,7 @@ function startKyoku(s: GameState, now: number) {
     riichiCount: 0,
     pendingAbort: null,
     allDoneAt: null,
+    callWindow: null,
     cpuSeen: {},
     startedAt: now,
   };
@@ -165,6 +169,11 @@ function startKyoku(s: GameState, now: number) {
   s.resultAck = players.map(() => false);
   for (const o of s.opts) o.noCall = false;
   pushEvent(s, "kyokuStart", null, now);
+  // ドパなしは親だけが第1ツモ（あとは順番にツモる）
+  if (isTurnBased(s)) {
+    drawFor(s, dealer, now);
+    return;
+  }
   // 全員に第1ツモ（親から順）
   for (let i = 0; i < n; i++) {
     const seat = (dealer + i) % n;
@@ -391,10 +400,16 @@ function doDiscard(s: GameState, seat: number, tile: Tile, riichi: boolean, now:
 
   if (k.wall.length === 0 && k.players.every((x) => !x.mustDiscard)) {
     entry.houtei = true;
-    k.allDoneAt = now;
+    // ドパなしは、鳴き・ロンの確認が終わったらすぐ流局する
+    if (!isTurnBased(s)) k.allDoneAt = now;
   }
   entry.pendingMiss = missCandidates(s, seat, kindOf(tile));
   pushEvent(s, "discard", seat, now);
+
+  if (isTurnBased(s)) {
+    openWindow(s, { type: "discard", from: seat, index: p.river.length - 1 }, now);
+    return;
+  }
 
   if (autoRonCheck(s, { type: "discard", from: seat, index: p.river.length - 1 }, now)) return;
 
@@ -424,14 +439,23 @@ function doCall(s: GameState, a: Extract<Action, { type: "chi" | "pon" | "minkan
   }
   const p = k.players[a.seat];
   const f = k.players[a.from];
-  // 手元のツモ牌は山の先頭に戻す
-  const drawn = p.drawn!;
-  p.hand = removeTiles(p.hand, [drawn]);
-  k.wall.unshift(drawn);
-  p.drawn = null;
+  const turnBased = isTurnBased(s);
+  if (!turnBased) {
+    // 手元のツモ牌は山の先頭に戻す
+    const drawn = p.drawn!;
+    p.hand = removeTiles(p.hand, [drawn]);
+    k.wall.unshift(drawn);
+    p.drawn = null;
+  }
   p.hand = removeTiles(p.hand, opt.tiles);
   const entry = f.river[opt.index];
   entry.calledBy = a.seat;
+  if (turnBased) {
+    // ロンを見逃した人はフリテン。鳴きが入ったので、全員の第1巡（ダブル立直・九種九牌など）は終わり
+    markMisses(s, entry.pendingMiss.filter((x) => x !== a.seat));
+    k.callWindow = null;
+    for (const x of k.players) x.firstTurn = false;
+  }
   entry.pendingMiss = [];
   const meld: Meld = {
     type: a.type,
@@ -475,6 +499,7 @@ function doAnkan(s: GameState, seat: number, kind: Kind, now: number) {
   p.melds.push({ type: "ankan", tiles, from: null, calledTile: null });
   p.drawn = null;
   p.firstTurn = false;
+  if (isTurnBased(s)) for (const x of k.players) x.firstTurn = false;
   pushEvent(s, "kan", seat, now);
   afterKan(s, seat);
   rinshanDraw(s, seat, "now", now);
@@ -496,6 +521,11 @@ function doKakan(s: GameState, seat: number, kind: Kind, now: number) {
   p.kakanTile = tile;
   p.kakanPendingMiss = missCandidates(s, seat, kind);
   pushEvent(s, "kan", seat, now);
+  // ドパなしは、槍槓の確認が終わってから嶺上ツモ
+  if (isTurnBased(s)) {
+    openWindow(s, { type: "kakan", from: seat, index: -1 }, now);
+    return;
+  }
   // 発声と和了打診（槍槓）→ 一発消滅 → 嶺上ツモ
   if (autoRonCheck(s, { type: "kakan", from: seat }, now)) return;
   afterKan(s, seat);
@@ -517,10 +547,120 @@ function doNuki(s: GameState, seat: number, now: number) {
   p.nukiTile = tile;
   p.nukiPendingMiss = missCandidates(s, seat, NORTH);
   pushEvent(s, "nuki", seat, now);
+  // ドパなしは、抜いた北へのロンの確認が終わってから嶺上ツモ
+  if (isTurnBased(s)) {
+    openWindow(s, { type: "nuki", from: seat, index: -1 }, now);
+    return;
+  }
   // 発声と和了打診 → 一発消滅 → 嶺上ツモ
   if (autoRonCheck(s, { type: "nuki", from: seat }, now)) return;
   for (const x of k.players) x.ippatsu = false;
   rinshanDraw(s, seat, null, now);
+}
+
+// ---------------------------------------------------------------- ドパなし（順番に進む）の鳴き・ロンの確認
+
+function windowTarget(w: CallWindow): RonTarget {
+  return w.type === "discard" ? { type: "discard", from: w.from, index: w.index } : { type: w.type, from: w.from };
+}
+
+/** 確認を始める。自動和了の人がいればすぐ和了、選べる人がいなければすぐ次へ進む */
+function openWindow(s: GameState, w: Pick<CallWindow, "type" | "from" | "index">, now: number) {
+  const k = s.kyoku!;
+  k.callWindow = { ...w, openedAt: now, until: now + CALL_WINDOW_MS, passed: [], claim: null };
+  if (autoRonCheck(s, windowTarget(k.callWindow), now)) return;
+  settleWindow(s, now);
+}
+
+/** まだ答えていない人（ロンできる人・鳴ける人） */
+function windowPending(s: GameState): { ron: number[]; call: number[] } {
+  const w = s.kyoku!.callWindow!;
+  const target = windowTarget(w);
+  const out = { ron: [] as number[], call: [] as number[] };
+  for (let seat = 0; seat < playerCount(s); seat++) {
+    if (seat === w.from || w.passed.includes(seat) || w.claim?.seat === seat) continue;
+    // 自動和了の人は、和了できるなら確認の開始時に和了している
+    if (!isAuto(s, seat) && evalRon(s, seat, target)) out.ron.push(seat);
+    else if (!w.claim && w.type === "discard" && (s.seats[seat].isCpu || !s.opts[seat].noCall) && callOptions(s, seat).length > 0) {
+      out.call.push(seat);
+    }
+  }
+  return out;
+}
+
+/** 全員が答えたら進める（ロンが優先。ロンする人がいなくなってから、宣言済みのポン・カンが成立） */
+function settleWindow(s: GameState, now: number) {
+  const w = s.kyoku?.callWindow;
+  if (!w || s.phase !== "playing") return;
+  const pending = windowPending(s);
+  if (pending.ron.length > 0) return;
+  if (w.claim) {
+    applyClaim(s, now);
+    return;
+  }
+  if (pending.call.length > 0) return;
+  closeWindow(s, now);
+}
+
+function applyClaim(s: GameState, now: number) {
+  const w = s.kyoku!.callWindow!;
+  const a = w.claim!;
+  w.claim = null;
+  doCall(s, a, now);
+}
+
+/** 誰もロン・鳴きをしなかった（スキップ・時間切れ）。次の人のツモ、または嶺上ツモへ */
+function closeWindow(s: GameState, now: number) {
+  const k = s.kyoku!;
+  const w = k.callWindow!;
+  k.callWindow = null;
+  const f = k.players[w.from];
+  if (w.type === "discard") {
+    const entry = f.river[w.index];
+    markMisses(s, entry.pendingMiss);
+    entry.pendingMiss = [];
+    if (k.wall.length === 0) {
+      endExhaustive(s, now);
+      return;
+    }
+    drawFor(s, (w.from + 1) % playerCount(s), now);
+    return;
+  }
+  if (w.type === "kakan") {
+    markMisses(s, f.kakanPendingMiss);
+    f.kakanTile = null;
+    f.kakanPendingMiss = [];
+    afterKan(s, w.from);
+    rinshanDraw(s, w.from, "later", now);
+    return;
+  }
+  markMisses(s, f.nukiPendingMiss ?? []);
+  f.nukiTile = null;
+  f.nukiPendingMiss = [];
+  for (const x of k.players) x.ippatsu = false;
+  rinshanDraw(s, w.from, null, now);
+}
+
+function doPass(s: GameState, seat: number, now: number) {
+  const w = s.kyoku!.callWindow;
+  if (!isTurnBased(s) || !w) fail("スキップできる状態ではありません");
+  if (seat === w.from || w.passed.includes(seat) || w.claim?.seat === seat) fail("スキップできる状態ではありません");
+  w.passed.push(seat);
+  settleWindow(s, now);
+}
+
+/** ドパなしのポン・カン。ロンできる人が答え終わるまでは宣言だけしておく */
+function claimCall(s: GameState, a: Extract<Action, { type: "chi" | "pon" | "minkan" }>, now: number) {
+  const w = s.kyoku!.callWindow;
+  if (!w || w.type !== "discard") fail("間に合いませんでした");
+  if (w.claim) fail("間に合いませんでした（他の人が先に鳴きました）");
+  const want = a.tiles.slice().sort((x, y) => x - y).join(",");
+  const ok = callOptions(s, a.seat).some(
+    (o) => o.type === a.type && o.from === a.from && o.index === a.index && o.tiles.slice().sort((x, y) => x - y).join(",") === want,
+  );
+  if (!ok) fail("鳴けません");
+  w.claim = a;
+  settleWindow(s, now);
 }
 
 function doTsumo(s: GameState, seat: number, now: number) {
@@ -877,6 +1017,18 @@ function collectDue(s: GameState, now: number): DueEvent[] {
     out.push({ at: k.allDoneAt + EXHAUST_GRACE_MS, run: () => endExhaustive(s, now) });
   }
   const n = playerCount(s);
+  const turnBased = isTurnBased(s);
+  if (turnBased && k.callWindow) {
+    const w = k.callWindow;
+    // 時間切れ：答えていない人はスキップ扱い（宣言済みのポン・カンがあれば成立）
+    out.push({
+      at: w.until,
+      run: () => {
+        if (w.claim) applyClaim(s, now);
+        else closeWindow(s, now);
+      },
+    });
+  }
   for (let seat = 0; seat < n; seat++) {
     const p = k.players[seat];
     if (s.seats[seat].isCpu) {
@@ -907,17 +1059,24 @@ function collectDue(s: GameState, now: number): DueEvent[] {
           run: () => {
             k.cpuSeen[key] = true;
             const a = cpuChooseCall(s, seat, from);
-            if (!a) return;
-            try {
-              applyInternal(s, a, now);
-            } catch (e) {
-              if (!(e instanceof GameError)) throw e;
+            if (a) {
+              try {
+                applyInternal(s, a, now);
+              } catch (e) {
+                if (!(e instanceof GameError)) throw e;
+              }
+            }
+            // ドパなし：鳴かなかったらスキップ（待たせない）
+            const w = s.kyoku?.callWindow;
+            if (turnBased && w && s.phase === "playing" && !w.passed.includes(seat) && w.claim?.seat !== seat && w.from !== seat) {
+              w.passed.push(seat);
+              settleWindow(s, now);
             }
           },
         });
       }
     } else {
-      const dl = discardDeadline(s, seat, DISCARD_TIMEOUT_MS, AUTO_TSUMOGIRI_MS);
+      const dl = discardDeadline(s, seat, discardTimeoutMs(s), AUTO_TSUMOGIRI_MS);
       if (dl !== null) {
         out.push({
           at: dl,
@@ -986,7 +1145,9 @@ function applyInternal(s: GameState, a: Action, now: number) {
     case "chi":
     case "pon":
     case "minkan":
-      return doCall(s, a, now);
+      return isTurnBased(s) ? claimCall(s, a, now) : doCall(s, a, now);
+    case "pass":
+      return doPass(s, a.seat, now);
     case "ankan":
       return doAnkan(s, a.seat, a.kind, now);
     case "kakan":
