@@ -55,7 +55,7 @@ export default function RulesForm({
           { v: 3, label: "三人麻雀" },
         ]}
         // 四人麻雀に戻したら少牌マイティは解除（三人麻雀専用）
-        onChange={(v) => onChange({ ...rules, players: v as 3 | 4, ...(v === 4 ? { mighty: false } : {}) })}
+        onChange={(v) => onChange({ ...rules, players: v as 3 | 4, ...(v === 4 ? { mighty: false, turnBased: false } : {}) })}
       />
       {rules.players === 3 && (
         <>
@@ -67,8 +67,22 @@ export default function RulesForm({
               { v: false, label: "なし" },
               { v: true, label: "あり" },
             ]}
-            // 少牌マイティは東南戦に固定
-            onChange={(v) => onChange({ ...rules, mighty: v, ...(v ? { length: "hanchan" as const } : {}) })}
+            // 少牌マイティは東南戦に固定。ドパなしは少牌マイティのときだけ
+            onChange={(v) => onChange({ ...rules, mighty: v, ...(v ? { length: "hanchan" as const } : { turnBased: false }) })}
+          />
+        </>
+      )}
+      {mightyOn && (
+        <>
+          <span className="text-dp-muted">ドパ</span>
+          <Toggle
+            value={!rules.turnBased}
+            disabled={disabled}
+            options={[
+              { v: true, label: "あり" },
+              { v: false, label: "なし" },
+            ]}
+            onChange={(v) => onChange({ ...rules, turnBased: !v })}
           />
         </>
       )}
@@ -117,7 +131,9 @@ export default function RulesForm({
 export function rulesText(r: Rules): string {
   return [
     ...(r.players === 3 ? ["三人麻雀"] : []),
-    ...(r.players === 3 && r.mighty ? ["少牌マイティ", GAME_LENGTH_LABEL.hanchan] : [GAME_LENGTH_LABEL[r.length] ?? r.length]),
+    ...(r.players === 3 && r.mighty
+      ? ["少牌マイティ", ...(r.turnBased ? ["ドパなし"] : []), GAME_LENGTH_LABEL.hanchan]
+      : [GAME_LENGTH_LABEL[r.length] ?? r.length]),
     `喰い断${r.kuitan ? "あり" : "なし"}`,
     `赤ドラ${r.aka ? "あり" : "なし"}`,
   ].join("・");

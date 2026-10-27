@@ -3,13 +3,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AUTO_TSUMOGIRI_MS,
-  DISCARD_TIMEOUT_MS,
+  CALL_WINDOW_MS,
   ankanOptions,
   callOptions,
+  callWindowOf,
   canKyuushu,
   canNuki,
+  canPass,
   dealerSeat,
   discardDeadline,
+  discardTimeoutMs,
+  isTurnBased,
   doraIndicatorsShown,
   evalTsumo,
   kakanOptions,
@@ -174,6 +178,7 @@ function PlayerPanel({
   highlightLast,
   banner,
   riverRows,
+  turn = false,
 }: {
   state: GameState;
   seat: number;
@@ -181,6 +186,8 @@ function PlayerPanel({
   connected: boolean;
   highlightLast: "callable" | "win" | null;
   banner: string | null;
+  /** ドパなしで、この人の手番 */
+  turn?: boolean;
   /** 河のために確保しておく段数 */
   riverRows: number;
 }) {
@@ -190,7 +197,9 @@ function PlayerPanel({
   const w = seatWindIndex(state, seat);
   const aka = state.rules.aka;
   return (
-    <div className={`relative rounded-xl p-2 ${me ? "bg-black/25" : "bg-black/20"} flex flex-col gap-1.5`}>
+    <div
+      className={`relative rounded-xl p-2 ${me ? "bg-black/25" : "bg-black/20"} ${turn ? "ring-2 ring-dp-accent/80" : ""} flex flex-col gap-1.5`}
+    >
       <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs min-h-5">
         {/* 名前などは1行に収め、副露の場所が足りないときだけ副露を次の行に回す */}
         <div className="flex items-center gap-1.5 h-5 whitespace-nowrap overflow-hidden grow basis-0 min-w-[6.5rem]">
@@ -202,6 +211,7 @@ function PlayerPanel({
           {WIND[w]}
         </span>
         {p.riichi > 0 && <span className="px-1 rounded bg-dp-accent text-black font-black shrink-0">立直</span>}
+        {turn && <span className="px-1 rounded bg-dp-accent2 text-black font-black shrink-0">手番</span>}
         <span className="font-bold truncate min-w-[1.75rem] max-w-[7rem]">{info.name}</span>
         <span className="font-mono text-dp-accent shrink-0">{state.scores[seat].toLocaleString()}</span>
         {!info.isCpu && !connected && <span className="text-dp-bad font-bold shrink-0">切断中</span>}
@@ -237,12 +247,15 @@ function DiscardTimer({ state, seat, label, labelClass }: { state: GameState; se
     return () => clearInterval(iv);
   }, []);
   const p = state.kyoku?.players[seat];
-  const deadline = discardDeadline(state, seat, DISCARD_TIMEOUT_MS, AUTO_TSUMOGIRI_MS);
-  const total = p && p.riichi > 0 && p.drawn !== null ? AUTO_TSUMOGIRI_MS : DISCARD_TIMEOUT_MS;
+  // ドパなしで、ロン・鳴きを選べる間は、その残り時間を出す
+  const callWin = canPass(state, seat) ? callWindowOf(state) : null;
+  const timeout = discardTimeoutMs(state);
+  const deadline = callWin ? callWin.until : discardDeadline(state, seat, timeout, AUTO_TSUMOGIRI_MS);
+  const total = callWin ? CALL_WINDOW_MS : p && p.riichi > 0 && p.drawn !== null ? AUTO_TSUMOGIRI_MS : timeout;
   const remain = deadline === null ? 0 : Math.max(0, deadline - now);
   const secs = Math.ceil(remain / 1000);
   useEffect(() => {
-    if (deadline === null || total !== DISCARD_TIMEOUT_MS) return;
+    if (deadline === null || total === AUTO_TSUMOGIRI_MS) return;
     if (secs <= 3 && secs >= 1 && lastBeep.current !== secs) {
       lastBeep.current = secs;
       SE.tick();
@@ -339,6 +352,10 @@ export default function GameView({ state, mySeat, onAction, connected }: Props) 
   const ankans = useMemo(() => (playing && mySeat !== null ? ankanOptions(state, mySeat) : []), [state, mySeat, playing]);
   const kakans = useMemo(() => (playing && mySeat !== null ? kakanOptions(state, mySeat) : []), [state, mySeat, playing]);
   const kyuushu = playing && mySeat !== null && canKyuushu(state, mySeat);
+  // ドパなし：順番に進む。ロン・鳴きを選べるときはスキップできる
+  const turnBased = isTurnBased(state);
+  const passOk = playing && mySeat !== null && canPass(state, mySeat) && (rons.length > 0 || calls.length > 0);
+  const turnSeat = turnBased && k ? k.players.findIndex((p) => p.mustDiscard) : -1;
 
   // 鳴ける・ロンできる捨て牌の強調（席ごと）
   const highlight: ("callable" | "win" | null)[] = state.seats.map((_, seat) => {
@@ -606,6 +623,7 @@ export default function GameView({ state, mySeat, onAction, connected }: Props) 
               highlightLast={highlight[order[0]]}
               banner={banners[order[0]]?.text ?? null}
               riverRows={2}
+              turn={turnSeat === order[0]}
             />
           </div>
         )}
@@ -619,6 +637,7 @@ export default function GameView({ state, mySeat, onAction, connected }: Props) 
             highlightLast={highlight[seat]}
             banner={banners[seat]?.text ?? null}
             riverRows={3}
+            turn={turnSeat === seat}
           />
         ))}
         <div className="col-span-2">
@@ -630,6 +649,7 @@ export default function GameView({ state, mySeat, onAction, connected }: Props) 
             highlightLast={null}
             banner={banners[viewSeat]?.text ?? null}
             riverRows={2}
+            turn={turnSeat === viewSeat}
           />
         </div>
       </div>
@@ -647,9 +667,15 @@ export default function GameView({ state, mySeat, onAction, connected }: Props) 
                   ? me.afterCall
                     ? "鳴いた後の1枚を捨ててください"
                     : "捨てる牌をタップ"
-                  : k.wall.length === 0
-                    ? "山切れ。流局を待っています"
-                    : "ツモ待ち"
+                  : passOk
+                    ? "ロン・鳴きを選択（5秒）"
+                    : turnBased && callWindowOf(state)
+                      ? "ロン・鳴きの確認中…"
+                      : k.wall.length === 0
+                        ? "山切れ。流局を待っています"
+                        : turnBased && turnSeat >= 0
+                          ? `${state.seats[turnSeat].name}の手番`
+                          : "ツモ待ち"
             }
           />
 
@@ -689,6 +715,10 @@ export default function GameView({ state, mySeat, onAction, connected }: Props) 
             )}
             <SlotButton show={kanCount > 0} color="bg-dp-accent text-black" onClick={pressKan}>
               {withTiles(kanTile !== null ? [kanTile] : [], "カン")}
+            </SlotButton>
+            {/* ドパなし：ロン・鳴きをしない（次の人の手番へ） */}
+            <SlotButton show={passOk} color="bg-dp-panel2 text-dp-text" onClick={() => act({ type: "pass", seat: mySeat })}>
+              スキップ
             </SlotButton>
           </div>
           {/* 手牌 */}

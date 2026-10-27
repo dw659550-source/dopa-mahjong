@@ -29,6 +29,11 @@ export interface Rules {
   players?: 3 | 4;
   /** 少牌マイティ（三人麻雀のみ。手牌12枚＋オールマイティ1枚）。古いデータには無い（=なし） */
   mighty?: boolean;
+  /**
+   * ドパなし（順番にツモ・打牌する普通の進行）。今は少牌マイティのときだけ選べる。
+   * 古いデータには無い（=ドパあり：全員が同時にツモ・打牌する）
+   */
+  turnBased?: boolean;
   kuitan: boolean;
   aka: boolean;
   cpuLevel: CpuLevel;
@@ -45,6 +50,10 @@ export const DEFAULT_RULES: Rules = {
 export const DISCARD_TIMEOUT_MS = 10_000;
 /** 立直後・ツモ切りモード時の自動ツモ切りまでの時間 */
 export const AUTO_TSUMOGIRI_MS = 1_000;
+/** ドパなし：1手番（ツモから打牌まで）の制限時間 */
+export const TURN_TIMEOUT_MS = 5_000;
+/** ドパなし：打牌のあと、ロン・ポン・カンをするか選べる時間 */
+export const CALL_WINDOW_MS = 5_000;
 /** 山切れ後、全員の打牌が終わってから流局するまでの猶予 */
 export const EXHAUST_GRACE_MS = 3_000;
 /** 和了・流局画面の表示時間（全員がOKを押せば早く進む） */
@@ -134,6 +143,23 @@ export interface PendingAbort {
   armed: boolean;
 }
 
+/**
+ * ドパなしの「鳴き・ロンの確認中」。打牌・加槓・北抜きのあと、ロン・ポン・カンできる人が
+ * 選び終わる（またはスキップ・時間切れ）まで次の人はツモらない。
+ */
+export interface CallWindow {
+  type: "discard" | "kakan" | "nuki";
+  from: number;
+  /** 打牌のときは河の位置（加槓・北抜きは -1） */
+  index: number;
+  openedAt: number;
+  until: number;
+  /** スキップした（または鳴きを選ばなかった）席 */
+  passed: number[];
+  /** ロンを待っている間に宣言されたポン・カン（ロンが優先なので、ロンする人がいなくなってから成立） */
+  claim: Extract<Action, { type: "chi" | "pon" | "minkan" }> | null;
+}
+
 export interface KyokuState {
   wall: Tile[];
   rinshan: Tile[];
@@ -148,6 +174,8 @@ export interface KyokuState {
   pendingAbort: PendingAbort | null;
   /** 山切れ後、全員の打牌が終わった時刻 */
   allDoneAt: number | null;
+  /** ドパなしの鳴き・ロンの確認中（ドパありでは使わない。古いデータには無い） */
+  callWindow?: CallWindow | null;
   /** CPUが鳴き判断済みの捨て牌（"cpu:from:index"） */
   cpuSeen: Record<string, boolean>;
   startedAt: number;
@@ -298,6 +326,8 @@ export type Action =
   /** 三人麻雀の北抜き */
   | { type: "nuki"; seat: number }
   | { type: "kyuushu"; seat: number }
+  /** ドパなし：ロン・ポン・カンをしない（スキップ） */
+  | { type: "pass"; seat: number }
   | { type: "opts"; seat: number; opts: Partial<SeatOpts> }
   | { type: "connected"; seat: number; connected: boolean }
   | { type: "ack"; seat: number }

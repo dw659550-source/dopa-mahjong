@@ -3,7 +3,7 @@ import { waitingKinds, shanten } from "./shanten.ts";
 import { mightyAgariKinds, mightyShanten, mightyWaitingKinds } from "./mighty.ts";
 import { EAST, NORTH, YAOCHU_KINDS, kindOf, numberOf, suitOf, toCounts, type Kind, type Tile } from "./tiles.ts";
 import { evaluateWin, meldIsOpen, type WinResult } from "./yaku.ts";
-import type { GameState, PlayerState, RonTarget } from "./types.ts";
+import { DISCARD_TIMEOUT_MS, TURN_TIMEOUT_MS, type CallWindow, type GameState, type PlayerState, type RonTarget } from "./types.ts";
 
 export function dealerSeat(state: GameState): number {
   return state.kyokuNum;
@@ -16,6 +16,27 @@ export function playerCount(state: GameState): number {
 
 export function isSanma(state: GameState): boolean {
   return state.seats.length === 3;
+}
+
+/** ドパなし（順番にツモ・打牌する進行） */
+export function isTurnBased(state: GameState): boolean {
+  return !!state.rules.turnBased;
+}
+
+/** 人の打牌の制限時間（ドパなしは1手番の時間） */
+export function discardTimeoutMs(state: GameState): number {
+  return isTurnBased(state) ? TURN_TIMEOUT_MS : DISCARD_TIMEOUT_MS;
+}
+
+/** ドパなしの鳴き・ロンの確認中なら、その内容 */
+export function callWindowOf(state: GameState): CallWindow | null {
+  return state.kyoku?.callWindow ?? null;
+}
+
+/** ドパなし：この席が、確認中の牌に対してまだロン・鳴きを選べるか（スキップ・鳴きの宣言をしていない） */
+function windowOpenFor(state: GameState, seat: number, type: CallWindow["type"], from: number): boolean {
+  const w = callWindowOf(state);
+  return !!w && w.type === type && w.from === from && from !== seat && !w.passed.includes(seat) && w.claim?.seat !== seat;
 }
 
 export function seatWindKind(state: GameState, seat: number): Kind {
@@ -187,6 +208,8 @@ export function ronTargetTile(state: GameState, target: RonTarget): { tile: Tile
 export function evalRon(state: GameState, seat: number, target: RonTarget): WinResult | null {
   if (state.phase !== "playing" || !state.kyoku) return null;
   if (target.from === seat) return null;
+  // ドパなしは、確認中の牌にだけロンできる（スキップした後はできない）
+  if (isTurnBased(state) && !windowOpenFor(state, seat, target.type, target.from)) return null;
   const t = ronTargetTile(state, target);
   if (!t) return null;
   const p = state.kyoku.players[seat];
@@ -232,6 +255,11 @@ export function callableDiscard(state: GameState, from: number): { index: number
   if (idx < 0) return null;
   const r = f.river[idx];
   if (r.calledBy !== null || r.houtei) return null;
+  // ドパなしは、確認中の捨て牌だけ鳴ける
+  if (isTurnBased(state)) {
+    const w = k.callWindow;
+    if (!w || w.type !== "discard" || w.from !== from || w.index !== idx || w.claim) return null;
+  }
   return { index: idx, tile: r.tile };
 }
 
@@ -263,6 +291,11 @@ export function canCallNow(state: GameState, seat: number): boolean {
   const k = state.kyoku;
   if (!k || state.phase !== "playing") return false;
   const p = k.players[seat];
+  if (isTurnBased(state)) {
+    // ドパなし：自分の手番ではなく、確認中の捨て牌にまだ答えていないとき
+    const w = k.callWindow;
+    return p.riichi === 0 && !p.mustDiscard && k.wall.length > 0 && !!w && w.type === "discard" && windowOpenFor(state, seat, "discard", w.from);
+  }
   return p.riichi === 0 && p.mustDiscard && p.drawn !== null && !p.afterCall && k.wall.length > 0;
 }
 
@@ -270,7 +303,8 @@ export function callOptions(state: GameState, seat: number): CallOption[] {
   if (!canCallNow(state, seat)) return [];
   const k = state.kyoku!;
   const p = k.players[seat];
-  const hand = removeTiles(p.hand, [p.drawn!]);
+  // ドパありは鳴く人もツモ牌を持っている（鳴くとツモ牌は山に戻る）
+  const hand = isTurnBased(state) ? p.hand.slice() : removeTiles(p.hand, [p.drawn!]);
   const out: CallOption[] = [];
   const n = playerCount(state);
   for (let from = 0; from < n; from++) {
@@ -436,6 +470,13 @@ export function canKyuushu(state: GameState, seat: number): boolean {
 export function handShanten(p: PlayerState): number {
   const c = toCounts(p.hand);
   return p.mighty ? mightyShanten(c, p.melds.length, ownCounts(p, p.hand)) : shanten(c, p.melds.length);
+}
+
+/** ドパなし：スキップボタンを出すか（確認中の牌に、ロンまたはポン・カンできる） */
+export function canPass(state: GameState, seat: number): boolean {
+  const w = callWindowOf(state);
+  if (!w || !windowOpenFor(state, seat, w.type, w.from)) return false;
+  return ronOptions(state, seat).length > 0 || callOptions(state, seat).length > 0;
 }
 
 /** 打牌の自動実行時刻（人間のみ）。CPUは反応時間で動く */
