@@ -67,6 +67,8 @@ export interface WinInput {
   sanma?: boolean;
   /** 抜いた北（抜きドラ。ドラ・裏ドラの数え上げにも含める） */
   nuki?: Tile[];
+  /** 少牌マイティのオールマイティとして手牌に加えた牌（表ドラ・裏ドラには数えるが、赤ドラにはしない） */
+  wild?: Tile;
 }
 
 export interface YakuItem {
@@ -83,6 +85,8 @@ export interface WinResult {
   label: string; // 満貫 など（なければ空）
   /** 縛り判定用: 懸賞役を除いた飜数（役満なら13以上扱い） */
   yakuHan: number;
+  /** 少牌マイティで、オールマイティとして使った牌 */
+  wildTile?: Tile;
 }
 
 type Wait = "tanki" | "ryanmen" | "kanchan" | "penchan" | "shanpon";
@@ -124,7 +128,7 @@ function countDora(input: WinInput, handTiles: Tile[]): { dora: number; ura: num
       ura += kinds.filter((k) => k === d).length;
     }
   }
-  const aka = allTiles.filter((t) => isRed(t, input.aka)).length;
+  const aka = allTiles.filter((t) => t !== input.wild && isRed(t, input.aka)).length;
   return { dora, ura, aka, nuki: nukiTiles.length };
 }
 

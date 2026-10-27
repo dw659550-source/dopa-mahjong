@@ -1,5 +1,6 @@
 // 対局状態を読み取るだけの関数群（UI・CPU・エンジンで共有）
 import { waitingKinds, shanten } from "./shanten.ts";
+import { mightyAgariKinds, mightyShanten, mightyWaitingKinds } from "./mighty.ts";
 import { EAST, NORTH, YAOCHU_KINDS, kindOf, numberOf, suitOf, toCounts, type Kind, type Tile } from "./tiles.ts";
 import { evaluateWin, meldIsOpen, type WinResult } from "./yaku.ts";
 import type { GameState, PlayerState, RonTarget } from "./types.ts";
@@ -52,10 +53,21 @@ export function baseHand(p: PlayerState): Tile[] | null {
   return null;
 }
 
+/** 自分の牌すべて（指定した手牌・副露・抜いた北・extra）の牌種ごとの枚数。オールマイティの5枚目判定に使う */
+function ownCounts(p: PlayerState, tiles: Tile[], extra: Tile[] = []): number[] {
+  return toCounts([...tiles, ...p.melds.flatMap((m) => m.tiles), ...(p.nuki ?? []), ...extra]);
+}
+
+/** 待ちの牌種（少牌マイティならオールマイティ込み）。tiles は 3n+1 枚（少牌マイティは 3n 枚）の純手牌 */
+export function waitKinds(p: PlayerState, tiles: Tile[], meldCount = p.melds.length, extraOwn: Tile[] = []): Kind[] {
+  const c = toCounts(tiles);
+  return p.mighty ? mightyWaitingKinds(c, meldCount, ownCounts(p, tiles, extraOwn)) : waitingKinds(c, meldCount);
+}
+
 export function waitsOf(p: PlayerState): Kind[] {
   const h = baseHand(p);
   if (!h) return [];
-  return waitingKinds(toCounts(h), p.melds.length);
+  return waitKinds(p, h);
 }
 
 export function isMenzen(p: PlayerState): boolean {
@@ -85,6 +97,37 @@ interface WinFlags {
 }
 
 function evalHand(state: GameState, seat: number, hand: Tile[], winTile: Tile, flags: WinFlags): WinResult | null {
+  const p = state.kyoku!.players[seat];
+  if (!p.mighty) return evalHandWith(state, seat, hand, winTile, flags, undefined);
+  // 少牌マイティ：オールマイティを、和了形になる牌のうち最も点数が高くなる牌として扱う
+  const own = ownCounts(p, hand);
+  const ownTiles = new Set([...hand, ...p.melds.flatMap((m) => m.tiles), ...(p.nuki ?? [])]);
+  let best: WinResult | null = null;
+  for (const w of mightyAgariKinds(toCounts(hand), p.melds.length, own)) {
+    // その牌種の、自分が持っていない牌を1枚使う（赤かどうかは赤ドラの判定から外す）
+    const wild = [0, 1, 2, 3].map((i) => w * 4 + i).find((t) => !ownTiles.has(t));
+    if (wild === undefined) continue;
+    const r = evalHandWith(state, seat, [...hand, wild], winTile, flags, wild);
+    if (!r) continue;
+    if (
+      !best ||
+      r.basePoints > best.basePoints ||
+      (r.basePoints === best.basePoints && (r.han > best.han || (r.han === best.han && r.fu > best.fu)))
+    ) {
+      best = { ...r, wildTile: wild };
+    }
+  }
+  return best;
+}
+
+function evalHandWith(
+  state: GameState,
+  seat: number,
+  hand: Tile[],
+  winTile: Tile,
+  flags: WinFlags,
+  wild: Tile | undefined,
+): WinResult | null {
   const k = state.kyoku!;
   const p = k.players[seat];
   const isDealer = seat === dealerSeat(state);
@@ -109,6 +152,7 @@ function evalHand(state: GameState, seat: number, hand: Tile[], winTile: Tile, f
     kuitan: state.rules.kuitan,
     sanma: isSanma(state),
     nuki: p.nuki ?? [],
+    wild,
   });
 }
 
@@ -148,7 +192,7 @@ export function evalRon(state: GameState, seat: number, target: RonTarget): WinR
   const p = state.kyoku.players[seat];
   const h = baseHand(p);
   if (!h) return null;
-  const waits = waitingKinds(toCounts(h), p.melds.length);
+  const waits = waitKinds(p, h);
   if (!waits.includes(kindOf(t.tile))) return null;
   if (isFuriten(p, waits)) return null;
   return evalHand(state, seat, [...h, t.tile], t.tile, { isTsumo: false, chankan: t.chankan, houtei: t.houtei });
@@ -314,9 +358,10 @@ export function ankanOptions(state: GameState, seat: number): Kind[] {
     if (p.riichi > 0) {
       // 送り槓は不可。待ちが変わらない場合のみ
       if (kindOf(p.drawn!) !== kd) continue;
-      const before = waitingKinds(toCounts(removeTiles(p.hand, [p.drawn!])), p.melds.length);
+      const before = waitKinds(p, removeTiles(p.hand, [p.drawn!]));
+      const kanTiles = p.hand.filter((t) => kindOf(t) === kd);
       const afterHand = p.hand.filter((t) => kindOf(t) !== kd);
-      const after = waitingKinds(toCounts(afterHand), p.melds.length + 1);
+      const after = waitKinds(p, afterHand, p.melds.length + 1, kanTiles);
       if (before.length === 0 || before.join(",") !== after.join(",")) continue;
     }
     out.push(kd);
@@ -372,7 +417,7 @@ export function riichiDiscards(state: GameState, seat: number): Tile[] {
     const kd = kindOf(t);
     if (!okByKind.has(kd)) {
       const rest = removeTiles(p.hand, [t]);
-      okByKind.set(kd, waitingKinds(toCounts(rest), p.melds.length).length > 0);
+      okByKind.set(kd, waitKinds(p, rest).length > 0);
     }
     if (okByKind.get(kd)) out.push(t);
   }
@@ -389,7 +434,8 @@ export function canKyuushu(state: GameState, seat: number): boolean {
 }
 
 export function handShanten(p: PlayerState): number {
-  return shanten(toCounts(p.hand), p.melds.length);
+  const c = toCounts(p.hand);
+  return p.mighty ? mightyShanten(c, p.melds.length, ownCounts(p, p.hand)) : shanten(c, p.melds.length);
 }
 
 /** 打牌の自動実行時刻（人間のみ）。CPUは反応時間で動く */

@@ -32,7 +32,7 @@ import {
   type Kind,
   type Tile,
 } from "./tiles.ts";
-import type { Action, CpuLevel, GameState } from "./types.ts";
+import type { Action, CpuLevel, GameState, PlayerState } from "./types.ts";
 
 const DELAY: Record<CpuLevel, [number, number]> = {
   weak: [1500, 3000],
@@ -60,12 +60,25 @@ function visibleCounts(s: GameState, seat: number): number[] {
   return c;
 }
 
-function ukeire(counts: number[], meldCount: number, visible: number[], base: number): number {
+type ShantenFn = (counts: number[], meldCount: number) => number;
+
+/**
+ * 向聴数の計算（少牌マイティならオールマイティ込み）。
+ * CPUの判断用には「通常の向聴数 − 1」を使う（オールマイティは向聴数をちょうど1つ進めるので、
+ * 5枚目の制限で有効牌がすべてなくなる珍しい場合を除いて正確。正確な計算より大幅に速い）。
+ * 待ち・和了・聴牌の判定は query.ts の正確な計算を使う。
+ */
+function shantenFn(p: PlayerState): ShantenFn {
+  if (!p.mighty) return shanten;
+  return (counts, meldCount) => Math.max(-1, shanten(counts, meldCount) - 1);
+}
+
+function ukeire(counts: number[], meldCount: number, visible: number[], base: number, sh: ShantenFn): number {
   let n = 0;
   for (let kd = 0; kd < 34; kd++) {
     if (counts[kd] >= 4) continue;
     counts[kd]++;
-    if (shanten(counts, meldCount) < base) n += Math.max(0, 4 - visible[kd]);
+    if (sh(counts, meldCount) < base) n += Math.max(0, 4 - visible[kd]);
     counts[kd]--;
   }
   return n;
@@ -129,6 +142,7 @@ interface DiscardEval {
 function evaluateDiscards(s: GameState, seat: number, candidates: Tile[], level: CpuLevel): DiscardEval[] {
   const k = s.kyoku!;
   const p = k.players[seat];
+  const shantenOf = shantenFn(p);
   const visible = visibleCounts(s, seat);
   const doras = doraKinds(s);
   const byKind = new Map<Kind, Tile>();
@@ -141,8 +155,8 @@ function evaluateDiscards(s: GameState, seat: number, candidates: Tile[], level:
   const out: DiscardEval[] = [];
   for (const [kd, t] of byKind) {
     const rest = toCounts(removeTiles(p.hand, [t]));
-    const sh = shanten(rest, p.melds.length);
-    const uk = ukeire(rest, p.melds.length, visible, sh);
+    const sh = shantenOf(rest, p.melds.length);
+    const uk = ukeire(rest, p.melds.length, visible, sh, shantenOf);
     let score = -sh * 1000 + uk * 10;
     // 孤立した字牌・端牌から切る、ドラ・赤・役牌は残す
     if (isHonor(kd)) score += isYakuhai(s, seat, kd) && rest[kd] >= 1 ? -8 : 6;
@@ -175,13 +189,14 @@ export function cpuChooseSelfAction(s: GameState, seat: number): Action {
   }
 
   const th = threats(s, seat, level);
-  const curShanten = shanten(toCounts(p.hand), p.melds.length);
+  const shantenOf = shantenFn(p);
+  const curShanten = shantenOf(toCounts(p.hand), p.melds.length);
 
   // 暗槓・加槓（リーチ者がいるときは控える）
   if (th.length === 0 || level === "weak") {
     for (const kd of ankanOptions(s, seat)) {
       const after = p.hand.filter((t) => kindOf(t) !== kd);
-      if (shanten(toCounts(after), p.melds.length + 1) <= curShanten) return { type: "ankan", seat, kind: kd };
+      if (shantenOf(toCounts(after), p.melds.length + 1) <= curShanten) return { type: "ankan", seat, kind: kd };
     }
     if (level !== "weak") {
       for (const kd of kakanOptions(s, seat)) return { type: "kakan", seat, kind: kd };
@@ -238,7 +253,8 @@ export function cpuChooseCall(s: GameState, seat: number, from: number): Action 
   if (opts.length === 0) return null;
   const base = baseHand(p);
   if (!base) return null;
-  const curShanten = shanten(toCounts(base), p.melds.length);
+  const shantenOf = shantenFn(p);
+  const curShanten = shantenOf(toCounts(base), p.melds.length);
   const th = threats(s, seat, level);
   const allKinds = [...base, ...p.melds.flatMap((m) => m.tiles)].map(kindOf);
   const hasYakuhaiMeld = p.melds.some((m) => m.type !== "chi" && isYakuhai(s, seat, kindOf(m.tiles[0])));
@@ -251,7 +267,7 @@ export function cpuChooseCall(s: GameState, seat: number, from: number): Action 
     const afterKinds = [...rest.map(kindOf), ...p.melds.flatMap((m) => m.tiles).map(kindOf), targetKind, ...o.tiles.map(kindOf)];
     let after = Infinity;
     for (const d of rest) {
-      const sh = shanten(toCounts(removeTiles(rest, [d])), p.melds.length + 1);
+      const sh = shantenOf(toCounts(removeTiles(rest, [d])), p.melds.length + 1);
       if (sh < after) after = sh;
     }
     const yakuhaiPon = o.type === "pon" && isYakuhai(s, seat, targetKind);

@@ -164,6 +164,13 @@ body {
   background: linear-gradient(135deg, #1d8a63 0%, #0f5c41 100%);
   box-shadow: 0 2px 0 #0a3d2b, 0 3px 4px rgba(0, 0, 0, 0.35);
 }
+/* 少牌マイティのオールマイティ牌（★） */
+.tile-mighty {
+  background: linear-gradient(180deg, #fff6c9 0%, #f2cf5b 100%);
+  box-shadow: 0 2px 0 #b8902a, 0 3px 4px rgba(0, 0, 0, 0.35);
+  color: #b3261e;
+  font-size: calc(var(--tw) * 0.72);
+}
 /* 画像の牌。枠や影は画像に含まれているので、要素側の背景・影は付けない */
 .tile-img {
   background: transparent;

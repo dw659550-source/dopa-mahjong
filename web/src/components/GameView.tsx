@@ -28,7 +28,7 @@ import {
   type RonTarget,
   type Tile as TileId,
 } from "@dopa/shared";
-import Tile from "./Tile";
+import Tile, { MightyTile } from "./Tile";
 import { serverNow } from "@/lib/clock";
 import { SE } from "@/lib/sounds";
 
@@ -722,6 +722,13 @@ export default function GameView({ state, mySeat, onAction, connected }: Props) 
               </span>
             ) : (
               <span className="tile tile-md invisible" aria-hidden />
+            )}
+            {/* 少牌マイティ：架空の13枚目（オールマイティ）は右端に表示。切ることはできない */}
+            {me.mighty && (
+              <>
+                <span className="w-1 shrink-0" />
+                <MightyTile size="md" />
+              </>
             )}
           </div>
           <div className="flex justify-end items-end gap-2">

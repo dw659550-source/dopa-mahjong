@@ -463,3 +463,83 @@ test("三人麻雀: ツモ損（子のツモは2人だけが払う）", () => {
   assert.equal(d[1], w.points);
   assert.ok(before.every((x) => x === 35000));
 });
+
+// ---------------------------------------------------------------- 少牌マイティ
+
+function freshMighty(seed = 5): GameState {
+  const s = createGame([0, 1, 2].map((i) => ({ name: `P${i}`, isCpu: false, cpuLevel: "normal" as const })), { ...DEFAULT_RULES, mighty: true, length: "tonpu" }, seed, 0);
+  if (s.phase !== "playing") return freshMighty(seed + 1);
+  for (const p of s.kyoku!.players) p.firstTurn = false;
+  return s;
+}
+
+test("少牌マイティ: 配牌12枚（＋第1ツモ）、東南戦に固定", () => {
+  const s = freshMighty();
+  assert.equal(s.rules.length, "hanchan");
+  assert.equal(s.rules.mighty, true);
+  for (const p of s.kyoku!.players) assert.equal(p.hand.length, 13); // 12枚＋第1ツモ
+  // 四人麻雀では少牌マイティにならない
+  const s4 = createGame(humanSeats(), { ...DEFAULT_RULES, mighty: true }, 1, 0);
+  assert.equal(s4.rules.mighty, false);
+});
+
+test("少牌マイティ: オールマイティ込みで待ちを判定する", () => {
+  const s = freshMighty();
+  setHand(s, 1, "123p456p789s1z55z", null);
+  const p = s.kyoku!.players[1];
+  p.mustDiscard = false;
+  const w = waitsOf(p);
+  // 1z を引けば 1z+オールマイティ(1z/5z) で和了、5z を引けば 555z＋1z+オールマイティ(1z) で和了
+  assert.ok(w.includes(27), `1z が待ちにない: ${w}`);
+  assert.ok(w.includes(31), `5z が待ちにない: ${w}`);
+});
+
+test("少牌マイティ: オールマイティは表ドラに数えるが赤ドラにはしない", () => {
+  let s = freshMighty();
+  s.opts[1].autoHora = false;
+  // オールマイティが 5p にならないと和了できない形（46p の嵌張）
+  setHand(s, 1, "123p46p789s11z55z", "5z");
+  s.kyoku!.doraIndicators[0] = parseTiles("4p")[0]; // ドラは5p
+  s.kyoku!.doraRevealed = 1;
+  s = applyAction(s, { type: "tsumo", seat: 1 }, 100).state;
+  assert.equal(s.phase, "result");
+  const win = s.result!.wins[0];
+  assert.ok(win.wildTile !== null && win.wildTile !== undefined);
+  assert.equal(kindOf(win.wildTile!), 13); // 5p
+  assert.ok(win.yaku.some((y) => y.name === "ドラ" && y.han >= 1), "オールマイティの5pがドラに数えられていない");
+  assert.ok(!win.yaku.some((y) => y.name === "赤ドラ"), "オールマイティが赤ドラになっている");
+});
+
+test("少牌マイティ: 自分の5枚目にはなれない", () => {
+  const s = freshMighty();
+  // 1z を4枚持っている：オールマイティは1zになれない
+  setHand(s, 1, "1111z123p456p78s", null);
+  const p = s.kyoku!.players[1];
+  p.mustDiscard = false;
+  // 78s の両面（6s/9s）は待ちになるが、オールマイティを1zにして単騎、という形は作れない
+  const w = waitsOf(p);
+  assert.ok(!w.includes(27));
+});
+
+for (const level of ["weak", "normal", "strong"] as const) {
+  test(`少牌マイティ: CPU 3人で最後まで対局できる (${level})`, () => {
+    const t0 = Date.now();
+    let s = createGame(cpuSeats3(level), { ...DEFAULT_RULES, mighty: true }, 99, 0);
+    let now = 0;
+    let wins = 0;
+    let lastSerial = 0;
+    for (let i = 0; i < 400000 && s.phase !== "ended"; i++) {
+      now += 300;
+      s = applyAction(s, { type: "tick" }, now).state;
+      const total = s.scores.reduce((a, b) => a + b, 0) + s.kyotaku * 1000;
+      assert.equal(total, 105000);
+      if (s.result && s.kyokuSerial !== lastSerial) {
+        lastSerial = s.kyokuSerial;
+        wins += s.result.wins.length;
+      }
+    }
+    assert.equal(s.phase, "ended");
+    assert.ok(wins > 0, "一度も和了がない");
+    console.log(`  mighty ${level}: ${s.kyokuSerial}局, ${wins}和了, ${Date.now() - t0}ms`);
+  });
+}

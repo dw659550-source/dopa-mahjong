@@ -82,3 +82,12 @@ export default function Tile({ tile, aka = true, size = "md", sideways, highligh
     </div>
   );
 }
+
+/** 少牌マイティのオールマイティ牌（架空の13枚目。どの牌にもなれる） */
+export function MightyTile({ size = "md", className }: { size?: TileSize; className?: string }) {
+  return (
+    <div className={`tile tile-${size} tile-mighty ${className ?? ""}`} title="オールマイティ" aria-label="オールマイティ">
+      ★
+    </div>
+  );
+}

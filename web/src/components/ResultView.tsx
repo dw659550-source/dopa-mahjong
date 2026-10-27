@@ -1,8 +1,18 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { kindOf, removeTiles, toCounts, waitingKinds, type GameState, type Tile as TileId, type Meld, type WinDetail } from "@dopa/shared";
-import Tile from "./Tile";
+import {
+  kindOf,
+  mightyWaitingKinds,
+  removeTiles,
+  toCounts,
+  waitingKinds,
+  type GameState,
+  type Tile as TileId,
+  type Meld,
+  type WinDetail,
+} from "@dopa/shared";
+import Tile, { MightyTile } from "./Tile";
 import { Melds, NukiTiles } from "./GameView";
 import { serverNow } from "@/lib/clock";
 
@@ -11,9 +21,13 @@ function sortTiles(t: TileId[]): TileId[] {
 }
 
 /** 和了した手の待ち（和了牌を除いた手牌で待っていた牌の種類） */
-function Waits({ w, aka }: { w: WinDetail; aka: boolean }) {
+function Waits({ w, aka, nuki }: { w: WinDetail; aka: boolean; nuki: TileId[] }) {
   const base = removeTiles(w.hand, [w.winTile]);
-  const kinds = waitingKinds(toCounts(base), w.melds.length);
+  // 少牌マイティの和了（オールマイティを使っている）は、オールマイティ込みの待ち
+  const kinds =
+    w.wildTile != null
+      ? mightyWaitingKinds(toCounts(base), w.melds.length, toCounts([...base, ...w.melds.flatMap((m) => m.tiles), ...nuki]))
+      : waitingKinds(toCounts(base), w.melds.length);
   if (kinds.length === 0) return null;
   return (
     <div className="flex flex-wrap items-center gap-1 text-sm">
@@ -59,7 +73,16 @@ export function WinBlock({ w, names, aka, nuki = [] }: { w: WinDetail; names: st
         <Tile tile={w.winTile} aka={aka} size="sm" highlight="win" />
         <OpenParts melds={w.melds} nuki={nuki} seat={w.seat} n={names.length} aka={aka} />
       </div>
-      <Waits w={w} aka={aka} />
+      {w.wildTile != null && (
+        <div className="flex items-center gap-1 text-sm">
+          <MightyTile size="sm" />
+          <span className="text-dp-muted mx-1">→</span>
+          {/* 赤ドラにはならないので、赤でない牌で表示 */}
+          <Tile tile={kindOf(w.wildTile) * 4 + 1} aka={aka} size="sm" />
+          <span className="text-xs text-dp-muted ml-1">として使用</span>
+        </div>
+      )}
+      <Waits w={w} aka={aka} nuki={nuki} />
       <ul className="grid grid-cols-2 gap-x-4 text-sm">
         {w.yaku.map((y, i) => (
           <li key={i} className="flex justify-between border-b border-white/5 py-0.5">
@@ -94,6 +117,7 @@ export default function ResultView({
   const remain = Math.max(0, Math.ceil((state.resultUntil - now) / 1000));
   const acked = mySeat !== null && state.resultAck[mySeat];
   const aka = state.rules.aka;
+  const mighty = !!state.rules.mighty;
   // 局が終わった時点の副露・抜いた北（次の局が始まるまで対局状態に残っている）
   const openOf = (seat: number) => {
     const p = state.kyoku?.players[seat];
@@ -126,6 +150,7 @@ export default function ResultView({
                       {sortTiles(h).map((t) => (
                         <Tile key={t} tile={t} aka={aka} size="sm" />
                       ))}
+                      {mighty && <MightyTile size="sm" className="ml-1" />}
                       <OpenParts {...openOf(seat)} seat={seat} n={state.seats.length} aka={aka} />
                     </div>
                   </div>
@@ -139,6 +164,7 @@ export default function ResultView({
                     {sortTiles(h).map((t) => (
                       <Tile key={t} tile={t} aka={aka} size="sm" />
                     ))}
+                    {mighty && <MightyTile size="sm" className="ml-1" />}
                     <OpenParts {...openOf(seat)} seat={seat} n={state.seats.length} aka={aka} />
                   </div>
                 ) : null,

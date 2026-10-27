@@ -43,6 +43,7 @@ export default function RulesForm({
   disabled?: boolean;
   showCpu?: boolean;
 }) {
+  const mightyOn = rules.players === 3 && !!rules.mighty;
   return (
     <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-2 items-center text-sm">
       <span className="text-dp-muted">人数</span>
@@ -53,12 +54,28 @@ export default function RulesForm({
           { v: 4, label: "四人麻雀" },
           { v: 3, label: "三人麻雀" },
         ]}
-        onChange={(v) => onChange({ ...rules, players: v as 3 | 4 })}
+        // 四人麻雀に戻したら少牌マイティは解除（三人麻雀専用）
+        onChange={(v) => onChange({ ...rules, players: v as 3 | 4, ...(v === 4 ? { mighty: false } : {}) })}
       />
+      {rules.players === 3 && (
+        <>
+          <span className="text-dp-muted">少牌マイティ</span>
+          <Toggle
+            value={!!rules.mighty}
+            disabled={disabled}
+            options={[
+              { v: false, label: "なし" },
+              { v: true, label: "あり" },
+            ]}
+            // 少牌マイティは東南戦に固定
+            onChange={(v) => onChange({ ...rules, mighty: v, ...(v ? { length: "hanchan" as const } : {}) })}
+          />
+        </>
+      )}
       <span className="text-dp-muted">対局</span>
       <Toggle
-        value={rules.length}
-        disabled={disabled}
+        value={mightyOn ? "hanchan" : rules.length}
+        disabled={disabled || mightyOn}
         options={(["tonpu", "hanchan", "issou"] as const).map((v) => ({ v, label: GAME_LENGTH_LABEL[v] }))}
         onChange={(v) => onChange({ ...rules, length: v })}
       />
@@ -100,7 +117,7 @@ export default function RulesForm({
 export function rulesText(r: Rules): string {
   return [
     ...(r.players === 3 ? ["三人麻雀"] : []),
-    GAME_LENGTH_LABEL[r.length] ?? r.length,
+    ...(r.players === 3 && r.mighty ? ["少牌マイティ", GAME_LENGTH_LABEL.hanchan] : [GAME_LENGTH_LABEL[r.length] ?? r.length]),
     `喰い断${r.kuitan ? "あり" : "なし"}`,
     `赤ドラ${r.aka ? "あり" : "なし"}`,
   ].join("・");

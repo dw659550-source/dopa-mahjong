@@ -27,6 +27,8 @@ export interface Rules {
   length: GameLength;
   /** 人数（三人麻雀は3）。古いデータには無い（=4） */
   players?: 3 | 4;
+  /** 少牌マイティ（三人麻雀のみ。手牌12枚＋オールマイティ1枚）。古いデータには無い（=なし） */
+  mighty?: boolean;
   kuitan: boolean;
   aka: boolean;
   cpuLevel: CpuLevel;
@@ -113,6 +115,8 @@ export interface PlayerState {
   /** 槍槓の対象になっている加槓牌 */
   kakanTile: Tile | null;
   kakanPendingMiss: number[];
+  /** 少牌マイティ（手牌12枚＋オールマイティ）。古いデータには無い */
+  mighty?: boolean;
   /** 三人麻雀で抜いた北（古いデータには無い） */
   nuki?: Tile[];
   /** 直前に抜いた北（ロンの対象になっている間だけ） */
@@ -162,6 +166,8 @@ export interface WinDetail {
   melds: Meld[];
   winTile: Tile;
   pao: number | null;
+  /** 少牌マイティで、オールマイティが何の牌として使われたか */
+  wildTile?: Tile | null;
 }
 
 export interface KyokuResult {

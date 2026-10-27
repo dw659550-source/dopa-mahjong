@@ -7,7 +7,16 @@ import { useRouter, useSearchParams } from "next/navigation";
 import StatsDetail from "@/components/StatsDetail";
 import { HISTORY_PAGE, fetchMatchesPage, subscribeAllPlayerStats } from "@/lib/rooms";
 import { getLastName, normalizeName } from "@/lib/identity";
-import { combineByName, fmtPoints, isSanmaMode, statsModeLabel, type MatchDoc, type PlayerStatsDoc } from "@/lib/statsModel";
+import {
+  STATS_GROUPS,
+  combineByName,
+  fmtPoints,
+  statsGroupOf,
+  statsModeLabel,
+  type MatchDoc,
+  type PlayerStatsDoc,
+  type StatsGroup,
+} from "@/lib/statsModel";
 
 
 /** 1回の「読み込み」で最大何ページ（100件ずつ）さかのぼるか */
@@ -76,11 +85,12 @@ function NameForm() {
 function PlayerView({ name }: { name: string }) {
   const [docs, setDocs] = useState<PlayerStatsDoc[] | null>(null);
   useEffect(() => subscribeAllPlayerStats(setDocs), []);
-  // 四人麻雀と三人麻雀は点数の付き方が違うので別々に集計する
-  const [sanma, setSanma] = useState(false);
+  // 四人麻雀・三人麻雀・少牌マイティは点数の付き方が違うので別々に集計する
+  const [group, setGroup] = useState<StatsGroup>("four");
+  const sanma = group !== "four";
   const stats = useMemo(
-    () => (docs ? combineByName(docs.filter((d) => isSanmaMode(d.mode) === sanma)).find((d) => d.name === name) ?? null : null),
-    [docs, name, sanma],
+    () => (docs ? combineByName(docs.filter((d) => statsGroupOf(d.mode) === group)).find((d) => d.name === name) ?? null : null),
+    [docs, name, group],
   );
 
   // 対局履歴（新しい順）。全対局を100件ずつ読み、この名前が参加したものだけ残す
@@ -129,12 +139,11 @@ function PlayerView({ name }: { name: string }) {
         <div className="flex items-center justify-between gap-2">
           <h2 className="text-xl font-black break-all">{name}</h2>
           <div className="flex gap-1 shrink-0">
-            <button className={!sanma ? "chip-on" : "chip-off"} onClick={() => setSanma(false)}>
-              四人
-            </button>
-            <button className={sanma ? "chip-on" : "chip-off"} onClick={() => setSanma(true)}>
-              三人
-            </button>
+            {STATS_GROUPS.map((g) => (
+              <button key={g.value} className={group === g.value ? "chip-on" : "chip-off"} onClick={() => setGroup(g.value)}>
+                {g.value === "four" ? "四人" : g.value === "sanma" ? "三人" : "マイティ"}
+              </button>
+            ))}
           </div>
         </div>
         {!docs && <p className="text-dp-muted text-sm">読み込み中…</p>}
@@ -142,7 +151,9 @@ function PlayerView({ name }: { name: string }) {
         {stats && (
           <>
             <p className="text-xs text-dp-muted">
-              {sanma ? "三人麻雀" : "四人麻雀"}の東風戦・東南戦・一荘戦の合計（CPU対戦を除く）
+              {group === "mighty"
+                ? "少牌マイティ（三人・東南戦）の成績（CPU対戦を除く）"
+                : `${group === "sanma" ? "三人麻雀" : "四人麻雀"}の東風戦・東南戦・一荘戦の合計（CPU対戦を除く）`}
               {stats.excluded && <span className="ml-2 text-dp-bad">※ランキング対象外</span>}
             </p>
             <StatsDetail d={stats} players={sanma ? 3 : 4} />
@@ -150,7 +161,7 @@ function PlayerView({ name }: { name: string }) {
         )}
       </div>
 
-      <Trends name={name} matches={matches.filter((m) => isSanmaMode(m.mode) === sanma)} done={done} sanma={sanma} />
+      <Trends name={name} matches={matches.filter((m) => statsGroupOf(m.mode) === group)} done={done} sanma={sanma} />
 
       <div className="card p-4 flex flex-col gap-2">
         <h2 className="font-black">対局履歴</h2>
