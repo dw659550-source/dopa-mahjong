@@ -59,7 +59,11 @@ export function createGame(seats: SeatInfo[], rules: Rules, seed: number, now: n
   const n = seats.length;
   const s: GameState = {
     version: 1,
-    rules: { ...rules, players: n as 3 | 4 },
+    // 少牌マイティは三人麻雀のみ・東南戦固定
+    rules:
+      rules.mighty && n === 3
+        ? { ...rules, players: 3, mighty: true, length: "hanchan" }
+        : { ...rules, players: n as 3 | 4, mighty: false },
     seats,
     connected: seats.map(() => true),
     opts: seats.map(() => ({ autoHora: true, noCall: false, tsumogiri: false })),
@@ -132,9 +136,11 @@ function startKyoku(s: GameState, now: number) {
   const all = shuffle(tiles, rng);
   const dead = all.slice(all.length - 14);
   const wall = all.slice(0, all.length - 14);
-  const players = Array.from({ length: n }, () => newPlayer(now));
+  const mighty = !!s.rules.mighty;
+  const players = Array.from({ length: n }, () => ({ ...newPlayer(now), mighty }));
   const dealer = dealerSeat(s);
-  for (let r = 0; r < 13; r++) {
+  // 少牌マイティは配牌12枚（13枚目はオールマイティ）
+  for (let r = 0; r < (mighty ? 12 : 13); r++) {
     for (let i = 0; i < n; i++) players[(dealer + i) % n].hand.push(wall.shift()!);
   }
   s.kyoku = {
@@ -669,6 +675,7 @@ function winDetail(
     melds: clone(p.melds),
     winTile,
     pao,
+    wildTile: r.wildTile ?? null,
   };
 }
 

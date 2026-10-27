@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { GAME_LENGTH_LABEL, kindOf, type Tile as TileId } from "@dopa/shared";
-import Tile from "@/components/Tile";
+import Tile, { MightyTile } from "@/components/Tile";
 import { Melds, NukiTiles } from "@/components/GameView";
 import { WinBlock } from "@/components/ResultView";
 import { fetchKifu, fetchMatch } from "@/lib/rooms";
@@ -175,6 +175,12 @@ function KyokuBoard({ k }: { k: KifuView }) {
                 <>
                   <span className="w-1.5" />
                   <Tile tile={p.drawn} aka={aka} size="xs" highlight="drawn" />
+                </>
+              )}
+              {k.mighty && (
+                <>
+                  <span className="w-1" />
+                  <MightyTile size="xs" />
                 </>
               )}
             </div>

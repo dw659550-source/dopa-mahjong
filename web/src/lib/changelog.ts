@@ -7,6 +7,10 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    date: "2026/10/27",
+    items: ["少牌マイティモードを追加（三人麻雀・東南戦。手牌12枚＋どの牌にもなれる★。戦績・ランキングは別集計）"],
+  },
+  {
     date: "2026/9/28",
     items: [
       "流局時の手牌表示にカン・ポンなどの副露を表示（不具合修正）",

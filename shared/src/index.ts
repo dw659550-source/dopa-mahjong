@@ -1,5 +1,6 @@
 export * from "./tiles.ts";
 export * from "./shanten.ts";
+export * from "./mighty.ts";
 export * from "./agari.ts";
 export * from "./yaku.ts";
 export * from "./types.ts";

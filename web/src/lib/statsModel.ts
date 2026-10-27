@@ -5,11 +5,20 @@ import { GAME_LENGTH_LABEL, type GameLength, type KifuRecord, type Rules } from 
  * 戦績を集計する単位（対局の長さ＋人数）。四人麻雀は "tonpu" など、三人麻雀は "sanma_tonpu" など。
  * 三人麻雀は点数の付き方が違うので、戦績・ランキングは四人麻雀と別に集計する。
  */
-export type StatsMode = GameLength | `sanma_${GameLength}`;
+export type StatsMode = GameLength | `sanma_${GameLength}` | "mighty";
 
-export const ALL_STATS_MODES: StatsMode[] = ["tonpu", "hanchan", "issou", "sanma_tonpu", "sanma_hanchan", "sanma_issou"];
+export const ALL_STATS_MODES: StatsMode[] = [
+  "tonpu",
+  "hanchan",
+  "issou",
+  "sanma_tonpu",
+  "sanma_hanchan",
+  "sanma_issou",
+  "mighty",
+];
 
-export function statsModeOf(rules: Pick<Rules, "length" | "players">): StatsMode {
+export function statsModeOf(rules: Pick<Rules, "length" | "players" | "mighty">): StatsMode {
+  if (rules.players === 3 && rules.mighty) return "mighty";
   return rules.players === 3 ? `sanma_${rules.length}` : rules.length;
 }
 
@@ -17,8 +26,23 @@ export function isSanmaMode(mode: string): boolean {
   return mode.startsWith("sanma_");
 }
 
-/** 表示名（例：東風戦 / 三人・東南戦） */
+/** ランキング・マイページで切り替える区分（四人麻雀・三人麻雀・少牌マイティ） */
+export type StatsGroup = "four" | "sanma" | "mighty";
+
+export const STATS_GROUPS: { value: StatsGroup; label: string }[] = [
+  { value: "four", label: "四人麻雀" },
+  { value: "sanma", label: "三人麻雀" },
+  { value: "mighty", label: "少牌マイティ" },
+];
+
+export function statsGroupOf(mode: string): StatsGroup {
+  if (mode === "mighty") return "mighty";
+  return isSanmaMode(mode) ? "sanma" : "four";
+}
+
+/** 表示名（例：東風戦 / 三人・東南戦 / 少牌マイティ） */
 export function statsModeLabel(mode: string): string {
+  if (mode === "mighty") return "少牌マイティ";
   const len = (isSanmaMode(mode) ? mode.slice(6) : mode) as GameLength;
   const base = GAME_LENGTH_LABEL[len] ?? len;
   return isSanmaMode(mode) ? `三人・${base}` : base;
@@ -101,10 +125,12 @@ export interface KifuDoc {
 /** 牌譜を画面で使う形にしたもの */
 export interface KifuView extends KifuRecord {
   aka: boolean;
+  /** 少牌マイティの対局（手牌の右に★を表示する） */
+  mighty: boolean;
 }
 
 export function parseKifu(d: KifuDoc): KifuView {
-  return { ...(JSON.parse(d.json) as KifuRecord), aka: d.aka };
+  return { ...(JSON.parse(d.json) as KifuRecord), aka: d.aka, mighty: d.mode === "mighty" };
 }
 
 export function kifuDocId(matchId: string, serial: number): string {
