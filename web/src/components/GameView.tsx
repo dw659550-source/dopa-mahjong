@@ -528,7 +528,16 @@ export default function GameView({ state, mySeat, onAction, connected }: Props) 
   };
 
   tsumogiriRef.current = () => {
-    if (!playing || !me || me.drawn === null || !me.mustDiscard) return;
+    if (!playing || !me || mySeat === null) return;
+    if (turnBased) {
+      // ドパなし：鳴きだけのときは右クリックでスキップ。ロン・ツモできるときはスキップ・ツモ切りしない（和了を逃さないように）
+      if (passOk) {
+        if (rons.length === 0) act({ type: "pass", seat: mySeat });
+        return;
+      }
+      if (canTsumo) return;
+    }
+    if (me.drawn === null || !me.mustDiscard) return;
     discard(me.drawn);
   };
 
